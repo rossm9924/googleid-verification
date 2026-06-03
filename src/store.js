@@ -56,6 +56,26 @@ export async function createProduct(redis, { fields, query }) {
   return product;
 }
 
+// Create many products in one write (used by bulk CSV import).
+export async function createProducts(redis, items) {
+  const products = await readAll(redis);
+  const now = new Date().toISOString();
+  const created = items.map(({ fields, query }) => ({
+    id: randomUUID(),
+    fields: fields || {},
+    query: query || '',
+    status: 'unverified',
+    match: null,
+    lastResults: [],
+    lastSearchedAt: null,
+    createdAt: now,
+    updatedAt: now,
+  }));
+  products.push(...created);
+  await writeAll(redis, products);
+  return created;
+}
+
 export async function updateProduct(redis, id, patch) {
   const products = await readAll(redis);
   const product = products.find((p) => p.id === id);

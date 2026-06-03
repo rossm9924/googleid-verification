@@ -5,13 +5,14 @@ const SERPAPI_URL = 'https://serpapi.com/search.json';
 
 // Ordered list of variant fields. The search query is built by joining the
 // non-empty values with commas, mirroring how a person would paste identifying
-// details into Google Shopping (e.g. "Hasbro Monopoly FIFA World Cup, 5010996385284").
+// details into Google Shopping (e.g. "Hasbro, Monopoly FIFA World Cup, 5010996385284").
+// Order matters: it determines both the form layout and the query word order.
 export const PRODUCT_FIELDS = [
-  { key: 'sku', label: 'SKU' },
-  { key: 'gtin', label: 'GTIN' },
-  { key: 'title', label: 'Title' },
-  { key: 'mpn', label: 'Manufacturer Part Number' },
   { key: 'manufacturer', label: 'Manufacturer' },
+  { key: 'title', label: 'Title' },
+  { key: 'gtin', label: 'GTIN' },
+  { key: 'sku', label: 'SKU' },
+  { key: 'mpn', label: 'Manufacturer Part Number' },
   { key: 'company', label: 'Company' },
   { key: 'description', label: 'Description' },
   { key: 'brand', label: 'Brand' },
@@ -26,13 +27,38 @@ export function buildQuery(fields = {}) {
     .join(', ');
 }
 
+// Google Shopping product links carry the catalog/product identifiers in the
+// `prds` query param, e.g. prds=catalogid:123,productid:456,gpcid:789,mid:...
+// Pull those out so the reviewer can see and copy them.
+function parseListingIds(link) {
+  const ids = {};
+  if (!link) return ids;
+  try {
+    const prds = new URL(link).searchParams.get('prds');
+    if (!prds) return ids;
+    for (const part of prds.split(',')) {
+      const i = part.indexOf(':');
+      if (i > 0) ids[part.slice(0, i).trim()] = part.slice(i + 1).trim();
+    }
+  } catch {
+    // ignore malformed links
+  }
+  return ids;
+}
+
 // Pull only the fields the review UI needs out of each shopping result.
 function normalizeResult(r = {}) {
+  const link = r.product_link ?? r.link ?? null;
+  const ids = parseListingIds(link);
   return {
     position: r.position ?? null,
     title: r.title ?? '',
     product_id: r.product_id ?? null,
-    product_link: r.product_link ?? r.link ?? null,
+    catalog_id: ids.catalogid ?? null,
+    listing_product_id: ids.productid ?? null,
+    gpcid: ids.gpcid ?? null,
+    mid: ids.mid ?? null,
+    product_link: link,
     source: r.source ?? '',
     price: r.price ?? '',
     extracted_price: r.extracted_price ?? null,

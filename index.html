@@ -15,15 +15,20 @@
           <p class="subtitle">Match product variants to Google Shopping listings &amp; verify by hand</p>
         </div>
       </div>
-      <div id="apiStatus" class="api-status" title="SerpApi connection status"></div>
+      <div class="topbar__actions">
+        <button id="newProductBtn" class="btn" type="button">+ New</button>
+        <button id="bulkImportBtn" class="btn" type="button">⇪ Bulk import</button>
+        <button id="reviewModeBtn" class="btn btn--primary" type="button">▶ Review mode</button>
+        <button id="exportBtn" class="btn" type="button">⤓ Export CSV</button>
+        <div id="apiStatus" class="api-status" title="API connection status"></div>
+      </div>
     </header>
 
     <main class="layout">
-      <!-- Saved products -->
       <aside class="sidebar">
         <div class="sidebar__head">
           <h2>Products</h2>
-          <button id="newProductBtn" class="btn btn--ghost" type="button">+ New</button>
+          <span id="productCount" class="muted"></span>
         </div>
         <div class="sidebar__filters">
           <input id="productSearch" type="search" placeholder="Filter saved products…" />
@@ -32,29 +37,21 @@
         <p id="productListEmpty" class="muted hidden">No saved products yet.</p>
       </aside>
 
-      <!-- Editor + results -->
       <section class="content">
         <div class="panel">
           <div class="panel__head">
             <h2 id="formTitle">Add Product</h2>
             <span id="statusBadge" class="badge hidden"></span>
           </div>
-
           <form id="productForm" class="fields"></form>
-
           <div class="query-box">
             <label for="queryInput">Search query <span class="muted">(non-empty fields joined by commas — editable)</span></label>
             <textarea id="queryInput" rows="2" placeholder="Fill in fields above to build a query…"></textarea>
             <div class="query-controls">
-              <label class="inline">Country
-                <input id="glInput" type="text" maxlength="2" value="us" />
-              </label>
-              <label class="inline">Lang
-                <input id="hlInput" type="text" maxlength="2" value="en" />
-              </label>
+              <label class="inline">Country <input id="glInput" type="text" maxlength="2" value="us" /></label>
+              <label class="inline">Lang <input id="hlInput" type="text" maxlength="2" value="en" /></label>
             </div>
           </div>
-
           <div class="actions">
             <button id="searchBtn" class="btn btn--primary" type="button">Search Google Shopping</button>
             <button id="saveBtn" class="btn" type="button">Save Product</button>
@@ -62,7 +59,15 @@
           </div>
         </div>
 
-        <!-- Current verified match -->
+        <!-- Reference product image (from the GTIN, via Barcode Lookup) -->
+        <div id="referencePanel" class="panel reference-panel hidden">
+          <div class="panel__head">
+            <h2>Reference product <span class="muted">(from GTIN · Barcode Lookup)</span></h2>
+            <button id="lookupBarcodeBtn" class="btn btn--ghost" type="button">Look up GTIN</button>
+          </div>
+          <div id="referenceBody" class="reference-body"></div>
+        </div>
+
         <div id="matchPanel" class="panel match-panel hidden">
           <div class="panel__head">
             <h2>Verified match</h2>
@@ -71,7 +76,6 @@
           <div id="matchBody"></div>
         </div>
 
-        <!-- Results -->
         <div class="panel">
           <div class="panel__head">
             <h2>Listings</h2>
@@ -85,6 +89,57 @@
         </div>
       </section>
     </main>
+
+    <!-- Bulk import modal -->
+    <div id="bulkModal" class="modal hidden">
+      <div class="modal__card">
+        <div class="panel__head">
+          <h2>Bulk import products</h2>
+          <button id="bulkCloseBtn" class="btn btn--ghost" type="button">✕</button>
+        </div>
+        <p class="muted">
+          Upload or paste CSV with a header row. Recognized columns (any order):
+          <code id="bulkColumns"></code>. Each row becomes a product.
+        </p>
+        <div class="bulk-controls">
+          <input id="bulkFile" type="file" accept=".csv,text/csv" />
+          <button id="bulkSampleBtn" class="btn btn--ghost btn--sm" type="button">Insert sample</button>
+        </div>
+        <textarea id="bulkText" rows="10" placeholder="Manufacturer,Title,GTIN,SKU&#10;Hasbro,Monopoly FIFA World Cup,5010996385284,MON-FIFA"></textarea>
+        <div id="bulkPreview" class="muted"></div>
+        <div class="actions">
+          <button id="bulkRunBtn" class="btn btn--primary" type="button">Import &amp; start review</button>
+          <button id="bulkImportOnlyBtn" class="btn" type="button">Import only</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Review (swipe) overlay -->
+    <div id="reviewOverlay" class="review hidden">
+      <div class="review__bar">
+        <button id="reviewExit" class="btn btn--ghost" type="button">✕ Exit</button>
+        <div class="review__progress">
+          <button id="reviewPrev" class="btn btn--sm" type="button">◀ Prev</button>
+          <span id="reviewCounter">0 / 0</span>
+          <button id="reviewNext" class="btn btn--sm" type="button">Next ▶</button>
+        </div>
+        <label class="inline"><input type="checkbox" id="reviewUnverifiedOnly" /> Unverified only</label>
+      </div>
+      <div class="review__body">
+        <div class="review__left">
+          <div id="reviewMeta" class="review__meta"></div>
+          <div id="reviewReference" class="review__reference"></div>
+          <div class="review__decision">
+            <span id="reviewStatus" class="badge"></span>
+            <button id="reviewNoMatch" class="btn btn--ghost btn--sm" type="button">Mark “no match”</button>
+          </div>
+        </div>
+        <div class="review__right">
+          <div id="reviewResultsStatus" class="results-status muted"></div>
+          <div id="reviewResults" class="results-grid"></div>
+        </div>
+      </div>
+    </div>
 
     <div id="toast" class="toast hidden"></div>
     <script src="./app.js"></script>
