@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Product Listing Verification</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="topbar__title">
+        <span class="logo">🔎</span>
+        <div>
+          <h1>Product Listing Verification</h1>
+          <p class="subtitle">Match product variants to Google Shopping listings &amp; verify by hand</p>
+        </div>
+      </div>
+      <div id="apiStatus" class="api-status" title="SerpApi connection status"></div>
+    </header>
+
+    <main class="layout">
+      <!-- Saved products -->
+      <aside class="sidebar">
+        <div class="sidebar__head">
+          <h2>Products</h2>
+          <button id="newProductBtn" class="btn btn--ghost" type="button">+ New</button>
+        </div>
+        <div class="sidebar__filters">
+          <input id="productSearch" type="search" placeholder="Filter saved products…" />
+        </div>
+        <ul id="productList" class="product-list"></ul>
+        <p id="productListEmpty" class="muted hidden">No saved products yet.</p>
+      </aside>
+
+      <!-- Editor + results -->
+      <section class="content">
+        <div class="panel">
+          <div class="panel__head">
+            <h2 id="formTitle">Add Product</h2>
+            <span id="statusBadge" class="badge hidden"></span>
+          </div>
+
+          <form id="productForm" class="fields"></form>
+
+          <div class="query-box">
+            <label for="queryInput">Search query <span class="muted">(non-empty fields joined by commas — editable)</span></label>
+            <textarea id="queryInput" rows="2" placeholder="Fill in fields above to build a query…"></textarea>
+            <div class="query-controls">
+              <label class="inline">Country
+                <input id="glInput" type="text" maxlength="2" value="us" />
+              </label>
+              <label class="inline">Lang
+                <input id="hlInput" type="text" maxlength="2" value="en" />
+              </label>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button id="searchBtn" class="btn btn--primary" type="button">Search Google Shopping</button>
+            <button id="saveBtn" class="btn" type="button">Save Product</button>
+            <button id="deleteBtn" class="btn btn--danger hidden" type="button">Delete</button>
+          </div>
+        </div>
+
+        <!-- Current verified match -->
+        <div id="matchPanel" class="panel match-panel hidden">
+          <div class="panel__head">
+            <h2>Verified match</h2>
+            <button id="clearMatchBtn" class="btn btn--ghost" type="button">Clear</button>
+          </div>
+          <div id="matchBody"></div>
+        </div>
+
+        <!-- Results -->
+        <div class="panel">
+          <div class="panel__head">
+            <h2>Listings</h2>
+            <div class="results-meta">
+              <span id="resultsCount" class="muted"></span>
+              <button id="markNoMatchBtn" class="btn btn--ghost hidden" type="button">Mark “no match”</button>
+            </div>
+          </div>
+          <div id="resultsStatus" class="results-status muted">Run a search to see Google Shopping listings.</div>
+          <div id="results" class="results-grid"></div>
+        </div>
+      </section>
+    </main>
+
+    <div id="toast" class="toast hidden"></div>
+    <script src="./app.js"></script>
+  </body>
+</html>
