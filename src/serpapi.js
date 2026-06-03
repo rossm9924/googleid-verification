@@ -1,5 +1,6 @@
-// Thin wrapper around the SerpApi Google Shopping engine.
-// Keeps the API key server-side; the browser never sees it.
+// SerpApi Google Shopping client — runtime-agnostic (uses global fetch, which
+// exists in both the Workers runtime and Node 18+). The API key is passed in
+// from the caller (env binding) so this module never reaches for process.env.
 const SERPAPI_URL = 'https://serpapi.com/search.json';
 
 // Ordered list of variant fields. The search query is built by joining the
@@ -44,9 +45,9 @@ function normalizeResult(r = {}) {
 }
 
 export async function searchGoogleShopping(query, opts = {}) {
-  const apiKey = process.env.SERPAPI_KEY;
+  const apiKey = opts.apiKey;
   if (!apiKey) {
-    const err = new Error('SERPAPI_KEY is not set. Add it to your .env file.');
+    const err = new Error('SERPAPI_KEY is not set. Configure it as a Worker secret (or in .dev.vars locally).');
     err.status = 500;
     throw err;
   }
@@ -60,8 +61,8 @@ export async function searchGoogleShopping(query, opts = {}) {
     engine: 'google_shopping',
     q: query,
     api_key: apiKey,
-    gl: opts.gl || process.env.DEFAULT_GL || 'us',
-    hl: opts.hl || process.env.DEFAULT_HL || 'en',
+    gl: opts.gl || 'us',
+    hl: opts.hl || 'en',
   });
   if (opts.location) params.set('location', opts.location);
   if (opts.num) params.set('num', String(opts.num));

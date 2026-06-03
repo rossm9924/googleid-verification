@@ -1,0 +1,27 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "googleid-verification",
+  "main": "src/worker.js",
+  "compatibility_date": "2025-06-01",
+  // Serve the dashboard's static files (public/) straight from the edge.
+  // Requests that don't match a file fall through to the Worker (the /api/* routes).
+  "assets": {
+    "directory": "./public"
+  },
+  "vars": {
+    "DEFAULT_GL": "us",
+    "DEFAULT_HL": "en"
+  },
+  // KV stores the products + verification decisions. Replace the id below with
+  // the one printed by `wrangler kv namespace create PRODUCTS_KV` before
+  // deploying. (For local `wrangler dev` the id is ignored — storage is simulated.)
+  "kv_namespaces": [
+    {
+      "binding": "PRODUCTS_KV",
+      "id": "REPLACE_WITH_KV_NAMESPACE_ID"
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
+}

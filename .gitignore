@@ -1,7 +1,10 @@
 node_modules/
+# Wrangler local state + local secrets
+.wrangler/
+.dev.vars
+.dev.vars.local
+# legacy local env (no longer used)
 .env
 .env.local
-data/*.json
-!data/.gitkeep
 npm-debug.log*
 .DS_Store
