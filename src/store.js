@@ -1,40 +1,47 @@
-// Cloudflare KV-backed persistence. The whole product list lives under a single
-// key as a JSON array — the direct analog of the original data/products.json
-// file store. This suits a single reviewer working through products one at a
-// time. (KV is eventually consistent and has no cross-request locking, so it is
-// not built for many writers hammering it concurrently — fine for this use.)
+// Persistence layer backed by Upstash Redis. The whole product list lives under
+// a single key as a JSON document — the direct analog of the original
+// data/products.json file store, which suits a single reviewer working through
+// products one at a time. The Redis client is passed in so this module stays
+// easy to unit test with a fake.
+import { randomUUID } from 'node:crypto';
+
 const KEY = 'products';
 
-async function readAll(kv) {
-  const raw = await kv.get(KEY);
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
+async function readAll(redis) {
+  const data = await redis.get(KEY);
+  if (!data) return [];
+  // @upstash/redis usually auto-deserializes JSON, but tolerate a raw string too.
+  if (Array.isArray(data)) return data;
+  if (typeof data === 'string') {
+    try {
+      const parsed = JSON.parse(data);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
   }
+  return [];
 }
 
-async function writeAll(kv, products) {
-  await kv.put(KEY, JSON.stringify(products));
+async function writeAll(redis, products) {
+  await redis.set(KEY, JSON.stringify(products));
 }
 
-export async function listProducts(kv) {
-  const products = await readAll(kv);
+export async function listProducts(redis) {
+  const products = await readAll(redis);
   return products.sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
 }
 
-export async function getProduct(kv, id) {
-  const products = await readAll(kv);
+export async function getProduct(redis, id) {
+  const products = await readAll(redis);
   return products.find((p) => p.id === id) || null;
 }
 
-export async function createProduct(kv, { fields, query }) {
-  const products = await readAll(kv);
+export async function createProduct(redis, { fields, query }) {
+  const products = await readAll(redis);
   const now = new Date().toISOString();
   const product = {
-    id: crypto.randomUUID(),
+    id: randomUUID(),
     fields: fields || {},
     query: query || '',
     status: 'unverified', // unverified | verified | no_match
@@ -45,24 +52,24 @@ export async function createProduct(kv, { fields, query }) {
     updatedAt: now,
   };
   products.push(product);
-  await writeAll(kv, products);
+  await writeAll(redis, products);
   return product;
 }
 
-export async function updateProduct(kv, id, patch) {
-  const products = await readAll(kv);
+export async function updateProduct(redis, id, patch) {
+  const products = await readAll(redis);
   const product = products.find((p) => p.id === id);
   if (!product) return null;
   Object.assign(product, patch, { id: product.id, updatedAt: new Date().toISOString() });
-  await writeAll(kv, products);
+  await writeAll(redis, products);
   return product;
 }
 
-export async function deleteProduct(kv, id) {
-  const products = await readAll(kv);
+export async function deleteProduct(redis, id) {
+  const products = await readAll(redis);
   const idx = products.findIndex((p) => p.id === id);
   if (idx === -1) return false;
   products.splice(idx, 1);
-  await writeAll(kv, products);
+  await writeAll(redis, products);
   return true;
 }

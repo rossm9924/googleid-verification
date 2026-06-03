@@ -1,15 +1,14 @@
 {
   "name": "googleid-verification",
   "version": "1.0.0",
-  "description": "Cloudflare Worker dashboard to match product variants against Google Shopping listings via SerpApi for manual verification.",
+  "description": "Vercel dashboard to match product variants against Google Shopping listings via SerpApi for manual verification.",
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "wrangler dev",
-    "start": "wrangler dev",
-    "deploy": "wrangler deploy"
+    "dev": "vercel dev",
+    "deploy": "vercel deploy --prod"
   },
-  "devDependencies": {
-    "wrangler": "^4.97.0"
+  "dependencies": {
+    "@upstash/redis": "^1.38.0"
   }
 }

@@ -1,10 +1,9 @@
 node_modules/
-# Wrangler local state + local secrets
-.wrangler/
-.dev.vars
-.dev.vars.local
-# legacy local env (no longer used)
+# Vercel
+.vercel/
+# Local env / secrets (Vercel uses dashboard env vars, not a committed file)
 .env
 .env.local
+.env*.local
 npm-debug.log*
 .DS_Store
