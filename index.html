@@ -57,6 +57,11 @@
             <button id="saveBtn" class="btn" type="button">Save Product</button>
             <button id="deleteBtn" class="btn btn--danger hidden" type="button">Delete</button>
           </div>
+          <div class="mp-toggles">
+            <span class="muted">Also look up:</span>
+            <label class="inline"><input type="checkbox" id="amazonToggle" /> Amazon (ASIN)</label>
+            <label class="inline"><input type="checkbox" id="walmartToggle" /> Walmart (item ID)</label>
+          </div>
         </div>
 
         <!-- Reference product image (from the GTIN, via Barcode Lookup) -->
@@ -86,6 +91,23 @@
           </div>
           <div id="resultsStatus" class="results-status muted">Run a search to see Google Shopping listings.</div>
           <div id="results" class="results-grid"></div>
+        </div>
+
+        <!-- Amazon / Walmart marketplace IDs (feature-flagged via the toggles above) -->
+        <div id="marketplacePanel" class="panel hidden">
+          <div class="panel__head">
+            <h2>Marketplace IDs</h2>
+            <span id="marketplaceStatus" class="muted"></span>
+          </div>
+          <div id="capturedIds" class="captured-ids"></div>
+          <div id="amazonSection" class="mp-section hidden">
+            <h3 class="mp-h">Amazon — ASINs</h3>
+            <div id="amazonResults" class="results-grid"></div>
+          </div>
+          <div id="walmartSection" class="mp-section hidden">
+            <h3 class="mp-h">Walmart — item IDs</h3>
+            <div id="walmartResults" class="results-grid"></div>
+          </div>
         </div>
       </section>
     </main>

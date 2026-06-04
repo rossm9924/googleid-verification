@@ -1,95 +1,94 @@
-// Persistence layer backed by Upstash Redis. The whole product list lives under
-// a single key as a JSON document — the direct analog of the original
-// data/products.json file store, which suits a single reviewer working through
-// products one at a time. The Redis client is passed in so this module stays
-// easy to unit test with a fake.
-import { randomUUID } from 'node:crypto';
+// Persistence layer backed by Supabase (Postgres). Each product is a row with
+// the variant fields as real columns (so the table is human-readable and can be
+// imported/exported as CSV directly from the Supabase dashboard), plus jsonb
+// columns for the chosen match and the cached search results. The Supabase
+// client is passed in so this module stays easy to unit test with a fake.
+import { PRODUCT_FIELDS } from './serpapi.js';
 
-const KEY = 'products';
+const TABLE = 'products';
+const FIELD_KEYS = PRODUCT_FIELDS.map((f) => f.key);
 
-async function readAll(redis) {
-  const data = await redis.get(KEY);
-  if (!data) return [];
-  // @upstash/redis usually auto-deserializes JSON, but tolerate a raw string too.
-  if (Array.isArray(data)) return data;
-  if (typeof data === 'string') {
-    try {
-      const parsed = JSON.parse(data);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  }
-  return [];
+function wrap(error) {
+  const err = new Error(error?.message || 'Database error');
+  err.status = 500;
+  err.cause = error;
+  return err;
 }
 
-async function writeAll(redis, products) {
-  await redis.set(KEY, JSON.stringify(products));
-}
-
-export async function listProducts(redis) {
-  const products = await readAll(redis);
-  return products.sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
-}
-
-export async function getProduct(redis, id) {
-  const products = await readAll(redis);
-  return products.find((p) => p.id === id) || null;
-}
-
-export async function createProduct(redis, { fields, query }) {
-  const products = await readAll(redis);
-  const now = new Date().toISOString();
-  const product = {
-    id: randomUUID(),
-    fields: fields || {},
-    query: query || '',
-    status: 'unverified', // unverified | verified | no_match
-    match: null, // the chosen Google Shopping listing
-    lastResults: [], // cached results from the most recent search
-    lastSearchedAt: null,
-    createdAt: now,
-    updatedAt: now,
+function rowToProduct(row) {
+  const fields = {};
+  for (const k of FIELD_KEYS) fields[k] = row[k] || '';
+  return {
+    id: row.id,
+    fields,
+    query: row.query || '',
+    status: row.status || 'unverified',
+    match: row.match || null,
+    amazon: row.amazon || null,
+    walmart: row.walmart || null,
+    lastResults: row.last_results || [],
+    lastSearchedAt: row.last_searched_at || null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
-  products.push(product);
-  await writeAll(redis, products);
-  return product;
 }
 
-// Create many products in one write (used by bulk CSV import).
-export async function createProducts(redis, items) {
-  const products = await readAll(redis);
-  const now = new Date().toISOString();
-  const created = items.map(({ fields, query }) => ({
-    id: randomUUID(),
-    fields: fields || {},
+function fieldsToColumns(fields = {}) {
+  const cols = {};
+  for (const k of FIELD_KEYS) cols[k] = (fields[k] || '').toString();
+  return cols;
+}
+
+export async function listProducts(db) {
+  const { data, error } = await db.from(TABLE).select('*').order('updated_at', { ascending: false });
+  if (error) throw wrap(error);
+  return (data || []).map(rowToProduct);
+}
+
+export async function getProduct(db, id) {
+  const { data, error } = await db.from(TABLE).select('*').eq('id', id).maybeSingle();
+  if (error) throw wrap(error);
+  return data ? rowToProduct(data) : null;
+}
+
+export async function createProduct(db, { fields, query }) {
+  const row = { ...fieldsToColumns(fields), query: query || '', status: 'unverified', last_results: [] };
+  const { data, error } = await db.from(TABLE).insert(row).select().single();
+  if (error) throw wrap(error);
+  return rowToProduct(data);
+}
+
+// Bulk insert (used by CSV import) — a single round trip.
+export async function createProducts(db, items) {
+  if (!items.length) return [];
+  const rows = items.map(({ fields, query }) => ({
+    ...fieldsToColumns(fields),
     query: query || '',
     status: 'unverified',
-    match: null,
-    lastResults: [],
-    lastSearchedAt: null,
-    createdAt: now,
-    updatedAt: now,
+    last_results: [],
   }));
-  products.push(...created);
-  await writeAll(redis, products);
-  return created;
+  const { data, error } = await db.from(TABLE).insert(rows).select();
+  if (error) throw wrap(error);
+  return (data || []).map(rowToProduct);
 }
 
-export async function updateProduct(redis, id, patch) {
-  const products = await readAll(redis);
-  const product = products.find((p) => p.id === id);
-  if (!product) return null;
-  Object.assign(product, patch, { id: product.id, updatedAt: new Date().toISOString() });
-  await writeAll(redis, products);
-  return product;
+export async function updateProduct(db, id, patch) {
+  const row = { updated_at: new Date().toISOString() };
+  if (patch.fields) Object.assign(row, fieldsToColumns(patch.fields));
+  if ('query' in patch) row.query = patch.query;
+  if ('status' in patch) row.status = patch.status;
+  if ('match' in patch) row.match = patch.match;
+  if ('amazon' in patch) row.amazon = patch.amazon;
+  if ('walmart' in patch) row.walmart = patch.walmart;
+  if ('lastResults' in patch) row.last_results = patch.lastResults;
+  if ('lastSearchedAt' in patch) row.last_searched_at = patch.lastSearchedAt;
+  const { data, error } = await db.from(TABLE).update(row).eq('id', id).select().maybeSingle();
+  if (error) throw wrap(error);
+  return data ? rowToProduct(data) : null;
 }
 
-export async function deleteProduct(redis, id) {
-  const products = await readAll(redis);
-  const idx = products.findIndex((p) => p.id === id);
-  if (idx === -1) return false;
-  products.splice(idx, 1);
-  await writeAll(redis, products);
-  return true;
+export async function deleteProduct(db, id) {
+  const { data, error } = await db.from(TABLE).delete().eq('id', id).select('id');
+  if (error) throw wrap(error);
+  return Array.isArray(data) && data.length > 0;
 }

@@ -1,15 +1,15 @@
 import { buildQuery } from '../../src/serpapi.js';
-import { getRedis } from '../../src/redis.js';
+import { getDb } from '../../src/supabase.js';
 import { getProduct, updateProduct, deleteProduct } from '../../src/store.js';
 import { readBody, cleanFields } from '../../src/http.js';
 
 export default async function handler(req, res) {
   const { id } = req.query;
   try {
-    const redis = getRedis();
+    const db = getDb();
 
     if (req.method === 'GET') {
-      const product = await getProduct(redis, id);
+      const product = await getProduct(db, id);
       return product ? res.status(200).json({ product }) : res.status(404).json({ error: 'Product not found' });
     }
 
@@ -25,12 +25,14 @@ export default async function handler(req, res) {
         patch.lastResults = body.lastResults;
         patch.lastSearchedAt = new Date().toISOString();
       }
-      const product = await updateProduct(redis, id, patch);
+      if ('amazon' in body) patch.amazon = body.amazon || null;
+      if ('walmart' in body) patch.walmart = body.walmart || null;
+      const product = await updateProduct(db, id, patch);
       return product ? res.status(200).json({ product }) : res.status(404).json({ error: 'Product not found' });
     }
 
     if (req.method === 'DELETE') {
-      const ok = await deleteProduct(redis, id);
+      const ok = await deleteProduct(db, id);
       return ok ? res.status(204).end() : res.status(404).json({ error: 'Product not found' });
     }
 

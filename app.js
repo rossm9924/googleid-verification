@@ -3,9 +3,14 @@ const state = {
   fields: [],
   serpapiConfigured: false,
   barcodeConfigured: false,
+  marketplaceConfigured: false,
+  storageConfigured: false,
+  amazonOn: localStorage.getItem('amazonOn') === '1',
+  walmartOn: localStorage.getItem('walmartOn') === '1',
   products: [],
   current: null, // currently loaded product record, or null for a new/unsaved one
   results: [], // results from the most recent search
+  marketplaceResults: { amazon: [], walmart: [] },
   review: { active: false, ids: [], index: 0, unverifiedOnly: false },
 };
 
@@ -158,6 +163,7 @@ function showEditor(product) {
 
   setFormValues(product?.fields || {});
   renderMatch(product?.match || null);
+  updateMarketplaceVisibility(product);
 
   if (product?.lastResults?.length) {
     state.results = product.lastResults;
@@ -350,6 +356,115 @@ async function renderReferenceInto(container, gtin, { force = false } = {}) {
   }
 }
 
+/* ---------- Marketplace (Amazon / Walmart) ---------- */
+function enabledMarketplaces() {
+  const list = [];
+  if (state.amazonOn) list.push('amazon');
+  if (state.walmartOn) list.push('walmart');
+  return list;
+}
+
+function renderCapturedIds(product) {
+  const box = $('#capturedIds');
+  box.innerHTML = '';
+  const rows = [];
+  for (const engine of ['amazon', 'walmart']) {
+    const m = product?.[engine];
+    if (!m?.id_value) continue;
+    const copyBtn = el('button', { className: 'copy-btn', type: 'button' }, 'copy');
+    copyBtn.addEventListener('click', () => copyText(String(m.id_value), copyBtn));
+    const remove = el('button', { className: 'copy-btn', type: 'button' }, 'remove');
+    remove.addEventListener('click', () => useMarketplace(engine, null));
+    const row = el('div', { className: 'captured-id' },
+      el('span', { className: 'ci-label' }, m.id_label || engine),
+      el('span', { className: 'ci-val' }, m.id_value), copyBtn, remove);
+    if (m.link) row.append(el('a', { href: m.link, target: '_blank', rel: 'noopener' }, 'view ↗'));
+    rows.push(row);
+  }
+  rows.forEach((r) => box.append(r));
+}
+
+function marketplaceCard(r, { selectedId, onUse }) {
+  const isSel = selectedId && selectedId === r.id_value;
+  const thumb = el('div', { className: 'card__thumb' },
+    r.thumbnail ? el('img', { src: r.thumbnail, alt: '', loading: 'lazy' }) : el('span', { className: 'placeholder' }, 'no image'));
+  const idCopy = el('button', { className: 'copy-btn', type: 'button' }, 'copy');
+  idCopy.addEventListener('click', () => copyText(String(r.id_value), idCopy));
+  const body = el('div', { className: 'card__body' },
+    el('div', { className: 'card__title' }, r.title || '(no title)'),
+    el('div', { className: 'id-row' }, el('span', { className: 'id-label' }, r.id_label), el('span', { className: 'card__mp-id' }, r.id_value), idCopy),
+    r.price && el('div', { className: 'card__price' }, r.price),
+    r.rating && el('div', { className: 'card__rating' }, `★ ${r.rating}${r.reviews ? ` (${r.reviews})` : ''}`),
+    r.source && el('div', { className: 'card__source' }, r.source));
+  const useBtn = el('button', { className: `btn btn--sm ${isSel ? '' : 'btn--primary'}`, type: 'button' }, isSel ? `✓ ${r.id_label} saved` : `Use this ${r.id_label}`);
+  useBtn.addEventListener('click', () => onUse(r));
+  const foot = el('div', { className: 'card__foot' }, useBtn);
+  if (r.link) foot.append(el('a', { href: r.link, target: '_blank', rel: 'noopener' }, 'View ↗'));
+  return el('div', { className: `card${isSel ? ' is-match' : ''}` }, thumb, body, foot);
+}
+
+function renderMarketplaceSection(engine) {
+  const grid = $(`#${engine}Results`);
+  const section = $(`#${engine}Section`);
+  const results = state.marketplaceResults[engine] || [];
+  section.classList.remove('hidden');
+  grid.innerHTML = '';
+  if (!results.length) { grid.append(el('div', { className: 'muted' }, `No ${engine} results.`)); return; }
+  const selectedId = state.current?.[engine]?.id_value;
+  results.forEach((r) => grid.append(marketplaceCard(r, { selectedId, onUse: (res) => useMarketplace(engine, res) })));
+}
+
+async function searchMarketplaces(query) {
+  const engines = enabledMarketplaces();
+  if (!engines.length || !query) return;
+  $('#marketplacePanel').classList.remove('hidden');
+  for (const engine of engines) {
+    const grid = $(`#${engine}Results`);
+    $(`#${engine}Section`).classList.remove('hidden');
+    grid.innerHTML = '';
+    grid.append(el('div', { className: 'muted' }, `Searching ${engine}…`));
+    try {
+      const data = await api('/api/marketplace', { method: 'POST', body: { engine, query } });
+      state.marketplaceResults[engine] = data.results;
+      renderMarketplaceSection(engine);
+    } catch (e) {
+      grid.innerHTML = '';
+      grid.append(el('div', { className: 'muted' }, `${engine} lookup failed: ${e.message}`));
+    }
+  }
+}
+
+async function useMarketplace(engine, result) {
+  try {
+    const product = await ensureSaved();
+    const payload = result ? {
+      id_label: result.id_label, id_value: result.id_value, secondary_id: result.secondary_id,
+      title: result.title, link: result.link, price: result.price, thumbnail: result.thumbnail,
+    } : null;
+    const { product: updated } = await api(`/api/products/${product.id}`, { method: 'PATCH', body: { [engine]: payload } });
+    state.current = { ...updated, lastResults: state.results.length ? state.results : updated.lastResults };
+    upsertLocalProduct(updated);
+    renderCapturedIds(state.current);
+    renderMarketplaceSection(engine);
+    toast(result ? `${result.id_label} saved ✓` : `${engine} ID cleared`, result ? 'ok' : '');
+  } catch (e) { toast(e.message, 'bad'); }
+}
+
+function updateMarketplaceVisibility(product) {
+  const hasCaptured = product?.amazon?.id_value || product?.walmart?.id_value;
+  const show = state.amazonOn || state.walmartOn || hasCaptured;
+  $('#marketplacePanel').classList.toggle('hidden', !show);
+  $('#amazonSection').classList.add('hidden');
+  $('#walmartSection').classList.add('hidden');
+  $('#amazonResults').innerHTML = '';
+  $('#walmartResults').innerHTML = '';
+  state.marketplaceResults = { amazon: [], walmart: [] };
+  $('#marketplaceStatus').textContent = enabledMarketplaces().length
+    ? `Run a search to fetch ${enabledMarketplaces().join(' & ')} results.`
+    : 'Enable Amazon/Walmart above to look up IDs.';
+  renderCapturedIds(product || {});
+}
+
 /* ---------- Match recording (shared) ---------- */
 async function recordMatch(productId, match, status) {
   const { product } = await api(`/api/products/${productId}/match`, { method: 'POST', body: { match: match || null, status } });
@@ -378,6 +493,7 @@ async function doSearch() {
       state.current = product; upsertLocalProduct(product);
     }
     if (currentGtin()) renderReferenceInto($('#referenceBody'), currentGtin());
+    if (enabledMarketplaces().length) searchMarketplaces(query);
     toast(`Found ${data.results.length} listing(s).`, 'ok');
   } catch (e) {
     $('#resultsStatus').textContent = e.message;
@@ -545,12 +661,15 @@ function csvCell(v) {
 function exportCSV() {
   if (!state.products.length) { toast('No products to export.', 'bad'); return; }
   const fieldKeys = state.fields.map((f) => f.key);
-  const header = ['id', 'status', ...fieldKeys, 'query', 'matched_title', 'matched_source', 'matched_price', 'matched_catalog_id', 'matched_product_id', 'matched_gpcid', 'matched_mid', 'matched_link'];
+  const header = ['id', 'status', ...fieldKeys, 'query', 'matched_title', 'matched_source', 'matched_price', 'matched_catalog_id', 'matched_product_id', 'matched_gpcid', 'matched_mid', 'matched_link', 'amazon_asin', 'amazon_link', 'walmart_id', 'walmart_link'];
   const lines = [header.join(',')];
   for (const p of state.products) {
     const m = p.match || {};
+    const a = p.amazon || {};
+    const w = p.walmart || {};
     const row = [p.id, p.status, ...fieldKeys.map((k) => p.fields[k] || ''), p.query,
-      m.title, m.source, m.price, m.catalog_id, m.listing_product_id, m.gpcid, m.mid, m.product_link];
+      m.title, m.source, m.price, m.catalog_id, m.listing_product_id, m.gpcid, m.mid, m.product_link,
+      a.id_value, a.link, w.id_value, w.link];
     lines.push(row.map(csvCell).join(','));
   }
   const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
@@ -707,11 +826,17 @@ async function init() {
     state.fields = meta.fields;
     state.serpapiConfigured = meta.serpapiConfigured;
     state.barcodeConfigured = meta.barcodeConfigured;
+    state.marketplaceConfigured = meta.marketplaceConfigured;
+    state.storageConfigured = meta.storageConfigured;
     renderForm();
     const status = $('#apiStatus');
-    const bits = [meta.serpapiConfigured ? 'SerpApi ✓' : 'SerpApi ✗', meta.barcodeConfigured ? 'Barcode ✓' : 'Barcode ✗'];
+    const bits = [
+      meta.serpapiConfigured ? 'SerpApi ✓' : 'SerpApi ✗',
+      meta.barcodeConfigured ? 'Barcode ✓' : 'Barcode ✗',
+      meta.storageConfigured ? 'Storage ✓' : 'Storage ✗',
+    ];
     status.textContent = bits.join(' · ');
-    status.classList.add(meta.serpapiConfigured ? 'ok' : 'bad');
+    status.classList.add(meta.serpapiConfigured && meta.storageConfigured ? 'ok' : 'bad');
   } catch (e) {
     toast(`Failed to load: ${e.message}`, 'bad');
   }
@@ -724,6 +849,22 @@ async function init() {
   $('#clearMatchBtn').addEventListener('click', clearMatch);
   $('#lookupBarcodeBtn').addEventListener('click', lookupBarcodeManual);
   $('#productSearch').addEventListener('input', renderProductList);
+
+  // Marketplace toggles (Amazon / Walmart)
+  const amzToggle = $('#amazonToggle');
+  const wmtToggle = $('#walmartToggle');
+  amzToggle.checked = state.amazonOn;
+  wmtToggle.checked = state.walmartOn;
+  if (!state.marketplaceConfigured) { amzToggle.disabled = true; wmtToggle.disabled = true; }
+  const onToggle = (engine, checkbox) => {
+    state[`${engine}On`] = checkbox.checked;
+    localStorage.setItem(`${engine}On`, checkbox.checked ? '1' : '0');
+    updateMarketplaceVisibility(state.current);
+    const query = $('#queryInput').value.trim();
+    if (checkbox.checked && query) searchMarketplaces(query);
+  };
+  amzToggle.addEventListener('change', () => onToggle('amazon', amzToggle));
+  wmtToggle.addEventListener('change', () => onToggle('walmart', wmtToggle));
 
   // Bulk
   $('#bulkImportBtn').addEventListener('click', openBulk);

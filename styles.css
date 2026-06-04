@@ -221,6 +221,21 @@ textarea { resize: vertical; }
 /* Topbar actions */
 .topbar__actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
+/* Marketplace toggles + sections */
+.mp-toggles { display: flex; align-items: center; gap: 16px; margin-top: 10px; flex-wrap: wrap; }
+.mp-toggles .inline { color: var(--text); }
+.mp-section { margin-top: 14px; }
+.mp-h { font-size: 13px; margin: 0 0 8px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.captured-ids { display: flex; flex-direction: column; gap: 6px; margin-bottom: 6px; }
+.captured-id {
+  display: flex; align-items: center; gap: 10px;
+  background: #f3f7f6; border: 1px solid #d7e7e1; border-radius: 8px; padding: 8px 12px;
+}
+.captured-id .ci-label { font-weight: 700; font-size: 11px; text-transform: uppercase; color: var(--primary-dark); min-width: 70px; }
+.captured-id .ci-val { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+.captured-id a { margin-left: auto; font-size: 12px; color: var(--accent); text-decoration: none; }
+.card__mp-id { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; font-weight: 600; }
+
 /* Listing identifier rows + copy */
 .card__ids { display: flex; flex-direction: column; gap: 3px; margin-top: 4px; }
 .id-row {

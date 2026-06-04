@@ -9,6 +9,6 @@
     "deploy": "vercel deploy --prod"
   },
   "dependencies": {
-    "@upstash/redis": "^1.38.0"
+    "@supabase/supabase-js": "^2.107.0"
   }
 }
