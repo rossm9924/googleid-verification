@@ -43,6 +43,19 @@
             <h2 id="formTitle">Add Product</h2>
             <span id="statusBadge" class="badge hidden"></span>
           </div>
+
+          <!-- Smart paste: detect fields from any pasted text -->
+          <div class="smart-paste">
+            <label class="smart-paste__label muted" for="pasteText">
+              Smart paste — drop in any details (title, UPC/GTIN, SKU, MPN…) and I'll detect the fields <span id="pasteMode"></span>
+            </label>
+            <div class="smart-paste__row">
+              <textarea id="pasteText" rows="2" placeholder="e.g. Hasbro Monopoly FIFA World Cup  UPC 5010996385284  SKU MON-FIFA"></textarea>
+              <button id="pasteDetectBtn" class="btn btn--primary btn--sm" type="button">Detect</button>
+            </div>
+            <div id="pasteResult" class="paste-result hidden"></div>
+          </div>
+
           <form id="productForm" class="fields"></form>
           <div class="query-box">
             <label for="queryInput">Search query <span class="muted">(non-empty fields joined by commas — editable)</span></label>

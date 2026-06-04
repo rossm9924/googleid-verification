@@ -221,6 +221,18 @@ textarea { resize: vertical; }
 /* Topbar actions */
 .topbar__actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
+/* Smart paste */
+.smart-paste { background: #f7f9fc; border: 1px dashed var(--border); border-radius: 10px; padding: 12px; margin-bottom: 14px; }
+.smart-paste__label { display: block; margin-bottom: 6px; }
+.smart-paste__row { display: flex; gap: 8px; align-items: flex-start; }
+.smart-paste__row textarea { flex: 1; font-size: 13px; }
+.paste-result { margin-top: 10px; background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
+.paste-rows { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+.paste-row { display: grid; grid-template-columns: auto 150px 1fr; gap: 8px; align-items: center; }
+.paste-row select { padding: 5px 8px; }
+.paste-row input[type="text"] { padding: 6px 8px; }
+#pasteMode { font-style: italic; }
+
 /* Marketplace toggles + sections */
 .mp-toggles { display: flex; align-items: center; gap: 16px; margin-top: 10px; flex-wrap: wrap; }
 .mp-toggles .inline { color: var(--text); }

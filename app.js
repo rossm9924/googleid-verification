@@ -5,6 +5,7 @@ const state = {
   barcodeConfigured: false,
   marketplaceConfigured: false,
   storageConfigured: false,
+  aiParseConfigured: false,
   amazonOn: localStorage.getItem('amazonOn') === '1',
   walmartOn: localStorage.getItem('walmartOn') === '1',
   products: [],
@@ -190,6 +191,7 @@ function newProduct() {
   setFormValues({});
   $('#queryInput').value = '';
   $('#referenceBody').innerHTML = '';
+  clearPaste();
   toggleReferencePanel();
 }
 
@@ -354,6 +356,77 @@ async function renderReferenceInto(container, gtin, { force = false } = {}) {
     container.innerHTML = '';
     container.append(el('div', { className: 'muted' }, `Barcode lookup failed: ${e.message}`));
   }
+}
+
+/* ---------- Smart paste (detect fields from pasted text) ---------- */
+async function detectPaste() {
+  const text = $('#pasteText').value.trim();
+  if (!text) { toast('Paste something first.', 'bad'); return; }
+  const btn = $('#pasteDetectBtn');
+  btn.disabled = true;
+  const old = btn.textContent;
+  btn.textContent = 'Detecting…';
+  try {
+    const { fields, source } = await api('/api/parse', { method: 'POST', body: { text } });
+    renderPasteResult(fields, source);
+  } catch (e) {
+    toast(e.message, 'bad');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = old;
+  }
+}
+
+function renderPasteResult(fields, source) {
+  const box = $('#pasteResult');
+  box.innerHTML = '';
+  box.classList.remove('hidden');
+  const keys = Object.keys(fields);
+  if (!keys.length) {
+    box.append(el('div', { className: 'muted' }, 'No fields detected. Try adding labels like “UPC:”, “SKU:”, “Brand:”.'));
+    return;
+  }
+  box.append(el('div', { className: 'muted' }, `Detected ${keys.length} field(s) ${source === 'ai' ? 'with AI' : 'by rules'} — review and edit, then apply:`));
+  const rows = el('div', { className: 'paste-rows' });
+  for (const k of keys) {
+    const inc = el('input', { type: 'checkbox', checked: true });
+    const sel = el('select', {});
+    state.fields.forEach((f) => {
+      const o = el('option', { value: f.key }, f.label);
+      if (f.key === k) o.selected = true;
+      sel.append(o);
+    });
+    const val = el('input', { type: 'text', value: fields[k] });
+    rows.append(el('div', { className: 'paste-row' }, inc, sel, val));
+  }
+  box.append(rows);
+  const apply = el('button', { className: 'btn btn--primary btn--sm', type: 'button' }, 'Apply to form');
+  apply.addEventListener('click', () => applyPasteRows(rows));
+  const discard = el('button', { className: 'btn btn--ghost btn--sm', type: 'button' }, 'Discard');
+  discard.addEventListener('click', clearPaste);
+  box.append(el('div', { className: 'actions' }, apply, discard));
+}
+
+function applyPasteRows(rows) {
+  let n = 0;
+  rows.querySelectorAll('.paste-row').forEach((r) => {
+    const include = r.querySelector('input[type="checkbox"]').checked;
+    const key = r.querySelector('select').value;
+    const val = r.querySelector('input[type="text"]').value.trim();
+    if (include && val) {
+      const input = document.getElementById(`field-${key}`);
+      if (input) { input.value = val; n++; }
+    }
+  });
+  syncQueryPreview();
+  clearPaste();
+  toast(`Applied ${n} field(s) to the form.`, 'ok');
+}
+
+function clearPaste() {
+  $('#pasteResult').classList.add('hidden');
+  $('#pasteResult').innerHTML = '';
+  $('#pasteText').value = '';
 }
 
 /* ---------- Marketplace (Amazon / Walmart) ---------- */
@@ -828,6 +901,7 @@ async function init() {
     state.barcodeConfigured = meta.barcodeConfigured;
     state.marketplaceConfigured = meta.marketplaceConfigured;
     state.storageConfigured = meta.storageConfigured;
+    state.aiParseConfigured = meta.aiParseConfigured;
     renderForm();
     const status = $('#apiStatus');
     const bits = [
@@ -849,6 +923,8 @@ async function init() {
   $('#clearMatchBtn').addEventListener('click', clearMatch);
   $('#lookupBarcodeBtn').addEventListener('click', lookupBarcodeManual);
   $('#productSearch').addEventListener('input', renderProductList);
+  $('#pasteDetectBtn').addEventListener('click', detectPaste);
+  $('#pasteMode').textContent = state.aiParseConfigured ? '(AI on)' : '(rules-based)';
 
   // Marketplace toggles (Amazon / Walmart)
   const amzToggle = $('#amazonToggle');

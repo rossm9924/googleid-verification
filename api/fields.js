@@ -8,5 +8,6 @@ export default function handler(req, res) {
     barcodeConfigured: Boolean(process.env.BARCODELOOKUP_KEY),
     marketplaceConfigured: Boolean(process.env.SERPAPI_KEY),
     storageConfigured: storageConfigured(),
+    aiParseConfigured: Boolean(process.env.ANTHROPIC_API_KEY),
   });
 }
