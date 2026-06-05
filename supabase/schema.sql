@@ -25,6 +25,7 @@ create table if not exists public.products (
   match             jsonb,                                -- the chosen Google Shopping listing
   amazon            jsonb,                                -- the chosen Amazon result (ASIN)
   walmart           jsonb,                                -- the chosen Walmart result (item id)
+  source_row        jsonb,                                -- the original imported CSV row (for faithful re-export)
   last_results      jsonb not null default '[]'::jsonb,   -- cached listings from the last search
   last_searched_at  timestamptz,
   created_at        timestamptz not null default now(),

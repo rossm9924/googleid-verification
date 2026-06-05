@@ -52,6 +52,8 @@ supabase/schema.sql  # run once to create the products table
 
 1. **Supabase:** create a project → SQL Editor → run [`supabase/schema.sql`](supabase/schema.sql).
    Copy the project URL and the **service_role** key into Vercel env vars above.
+   (If your table predates the bulk-import feature, also run
+   [`supabase/migration_source_row.sql`](supabase/migration_source_row.sql).)
 2. **SerpApi:** set `SERPAPI_KEY` (covers Google, Amazon, Walmart).
 3. **(Optional) Barcode Lookup:** set `BARCODELOOKUP_KEY` for the GTIN image.
 4. Deploy (Vercel auto-deploys on push). The header shows live status:

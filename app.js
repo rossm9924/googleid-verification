@@ -681,18 +681,27 @@ const HEADER_ALIASES = {
 function csvToItems(text) {
   const rows = parseCSV(text);
   if (rows.length < 2) return { items: [], error: 'Need a header row plus at least one data row.' };
+  const origHeader = rows[0].map((h) => h.trim());
   const validKeys = new Set(state.fields.map((f) => f.key));
-  const header = rows[0].map((h) => {
-    const norm = h.trim().toLowerCase();
-    return HEADER_ALIASES[norm] || (validKeys.has(norm) ? norm : null);
+  // Map each column to a known field key (for searching); unrecognized columns
+  // (ID, Store, Store ID, …) are still preserved in sourceRow for export.
+  const mapped = origHeader.map((h) => {
+    const n = h.toLowerCase();
+    return HEADER_ALIASES[n] || (validKeys.has(n) ? n : null);
   });
-  if (!header.some(Boolean)) return { items: [], error: 'No recognized columns in the header row.' };
+  if (!mapped.some(Boolean)) return { items: [], error: 'No recognized columns — include at least Title or GTIN.' };
   const items = rows.slice(1).map((r) => {
     const fields = {};
-    header.forEach((key, i) => { if (key && r[i] != null) fields[key] = String(r[i]).trim(); });
-    return { fields };
-  }).filter((it) => Object.values(it.fields).some(Boolean));
-  return { items, mapped: header.filter(Boolean) };
+    const sourceRow = {};
+    origHeader.forEach((h, i) => {
+      const v = r[i] != null ? String(r[i]).trim() : '';
+      if (h) sourceRow[h] = v;
+      const key = mapped[i];
+      if (key && v) fields[key] = v;
+    });
+    return { fields, sourceRow };
+  }).filter((it) => Object.values(it.fields).some(Boolean) || Object.values(it.sourceRow).some(Boolean));
+  return { items, mapped: mapped.filter(Boolean), columns: origHeader.filter(Boolean) };
 }
 
 /* ---------- Bulk import ---------- */
@@ -717,7 +726,8 @@ async function runBulk(startReview) {
   const items = previewBulk();
   if (!items || !items.length) { toast('Nothing to import — check the CSV.', 'bad'); return; }
   try {
-    const { products } = await api('/api/products', { method: 'POST', body: { items } });
+    const payload = items.map((it) => ({ fields: it.fields, source_row: it.sourceRow }));
+    const { products } = await api('/api/products', { method: 'POST', body: { items: payload } });
     products.forEach(upsertLocalProduct);
     renderProductList();
     closeBulk();
@@ -726,31 +736,60 @@ async function runBulk(startReview) {
   } catch (e) { toast(e.message, 'bad'); }
 }
 
-/* ---------- Export ---------- */
+/* ---------- Export (round-trips the imported template, e.g. ID, GTIN, Title, Store, Store ID) ---------- */
 function csvCell(v) {
   const s = v == null ? '' : String(v);
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
-function exportCSV() {
-  if (!state.products.length) { toast('No products to export.', 'bad'); return; }
-  const fieldKeys = state.fields.map((f) => f.key);
-  const header = ['id', 'status', ...fieldKeys, 'query', 'matched_title', 'matched_source', 'matched_price', 'matched_catalog_id', 'matched_product_id', 'matched_gpcid', 'matched_mid', 'matched_link', 'amazon_asin', 'amazon_link', 'walmart_id', 'walmart_link'];
-  const lines = [header.join(',')];
-  for (const p of state.products) {
-    const m = p.match || {};
-    const a = p.amazon || {};
-    const w = p.walmart || {};
-    const row = [p.id, p.status, ...fieldKeys.map((k) => p.fields[k] || ''), p.query,
-      m.title, m.source, m.price, m.catalog_id, m.listing_product_id, m.gpcid, m.mid, m.product_link,
-      a.id_value, a.link, w.id_value, w.link];
-    lines.push(row.map(csvCell).join(','));
-  }
-  const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+
+// The verified identifier written into the "Store ID" column. Prefers the
+// marketplace id when the row's Store is Amazon/Walmart, otherwise the chosen
+// Google listing's catalog/product id.
+function deriveStoreId(p) {
+  const store = String((p.sourceRow && (p.sourceRow.Store ?? p.sourceRow.store)) || '').toLowerCase();
+  if (store.includes('amazon') && p.amazon?.id_value) return p.amazon.id_value;
+  if (store.includes('walmart') && p.walmart?.id_value) return p.walmart.id_value;
+  if (p.match) return p.match.catalog_id || p.match.listing_product_id || p.match.product_id || '';
+  return p.amazon?.id_value || p.walmart?.id_value || '';
+}
+
+function downloadCSV(text, name) {
+  const blob = new Blob([text], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
-  const a = el('a', { href: url, download: `product-verification-${new Date().toISOString().slice(0, 10)}.csv` });
+  const a = el('a', { href: url, download: name });
   document.body.append(a); a.click(); a.remove();
   URL.revokeObjectURL(url);
-  toast(`Exported ${state.products.length} product(s).`, 'ok');
+}
+
+function exportCSV() {
+  if (!state.products.length) { toast('No products to export.', 'bad'); return; }
+  // Reproduce the imported columns exactly when available, filling Store ID.
+  const withSrc = state.products.filter((p) => p.sourceRow && Object.keys(p.sourceRow).length);
+  let columns = [];
+  if (withSrc.length) {
+    for (const p of withSrc) for (const k of Object.keys(p.sourceRow)) if (!columns.includes(k)) columns.push(k);
+  } else {
+    columns = ['ID', 'GTIN', 'Title', 'Store', 'Store ID'];
+  }
+  let storeIdKey = columns.find((c) => c.toLowerCase().replace(/[_\s]/g, '') === 'storeid');
+  if (!storeIdKey) { storeIdKey = 'Store ID'; columns.push(storeIdKey); }
+
+  const lines = [columns.map(csvCell).join(',')];
+  for (const p of state.products) {
+    const src = p.sourceRow || {};
+    const row = columns.map((c) => {
+      if (c === storeIdKey) return deriveStoreId(p) || src[c] || '';
+      if (c in src) return src[c];
+      const lc = c.toLowerCase();
+      if (lc === 'gtin') return p.fields.gtin || '';
+      if (lc === 'title') return p.fields.title || '';
+      return '';
+    });
+    lines.push(row.map(csvCell).join(','));
+  }
+  downloadCSV(lines.join('\n'), `store-ids-${new Date().toISOString().slice(0, 10)}.csv`);
+  const filled = state.products.filter((p) => deriveStoreId(p)).length;
+  toast(`Exported ${state.products.length} row(s) — ${filled} with a Store ID.`, 'ok');
 }
 
 /* ---------- Review (swipe) mode ---------- */
@@ -782,8 +821,16 @@ function exitReview() {
 function reviewGo(delta) {
   const list = reviewList();
   if (!list.length) { exitReview(); return; }
-  state.review.index = Math.max(0, Math.min(list.length - 1, state.review.index + delta));
+  const next = state.review.index + delta;
+  if (next >= list.length) { finishReview(); return; } // advanced past the last item
+  state.review.index = Math.max(0, next);
   renderReviewCurrent();
+}
+
+// Stop reviewing (either at the end, or early via the Done button) and export.
+function finishReview() {
+  exitReview();
+  exportCSV();
 }
 
 async function renderReviewCurrent() {
@@ -800,11 +847,20 @@ async function renderReviewCurrent() {
   const fieldsSummary = state.fields
     .filter((f) => product.fields[f.key])
     .map((f) => el('div', {}, el('span', { className: 'muted' }, `${f.label}: `), product.fields[f.key]));
+  // Show the original imported row values (e.g. ID, Store) when present.
+  const srcSummary = product.sourceRow
+    ? Object.entries(product.sourceRow)
+        .filter(([k, v]) => v && !/^title$|^gtin$|store id/i.test(k))
+        .map(([k, v]) => el('div', {}, el('span', { className: 'muted' }, `${k}: `), v))
+    : [];
+  const storeId = deriveStoreId(product);
   $('#reviewMeta').innerHTML = '';
   $('#reviewMeta').append(
     el('div', { className: 'r-title', style: 'font-weight:600' }, product.fields.title || '(untitled product)'),
     ...fieldsSummary,
-    el('div', { className: 'r-query' }, product.query || ''));
+    ...srcSummary,
+    el('div', { className: 'r-query' }, product.query || ''),
+    storeId ? el('div', { className: 'r-storeid' }, el('span', { className: 'muted' }, 'Store ID: '), storeId) : '');
 
   // Status badge
   const sb = $('#reviewStatus');
@@ -860,7 +916,7 @@ async function reviewNoMatch() {
 function advanceReview() {
   if (state.review.unverifiedOnly) {
     const list = reviewList();
-    if (!list.length) { exitReview(); toast('All reviewed 🎉', 'ok'); return; }
+    if (!list.length) { toast('All reviewed 🎉', 'ok'); finishReview(); return; }
     if (state.review.index >= list.length) state.review.index = list.length - 1;
     renderReviewCurrent();
   } else {
@@ -964,6 +1020,7 @@ async function init() {
   $('#exportBtn').addEventListener('click', exportCSV);
   $('#reviewModeBtn').addEventListener('click', () => enterReview());
   $('#reviewExit').addEventListener('click', exitReview);
+  $('#reviewDone').addEventListener('click', finishReview);
   $('#reviewPrev').addEventListener('click', () => reviewGo(-1));
   $('#reviewNext').addEventListener('click', () => reviewGo(1));
   $('#reviewNoMatch').addEventListener('click', reviewNoMatch);

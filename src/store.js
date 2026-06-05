@@ -26,6 +26,7 @@ function rowToProduct(row) {
     match: row.match || null,
     amazon: row.amazon || null,
     walmart: row.walmart || null,
+    sourceRow: row.source_row || null,
     lastResults: row.last_results || [],
     lastSearchedAt: row.last_searched_at || null,
     createdAt: row.created_at,
@@ -51,25 +52,31 @@ export async function getProduct(db, id) {
   return data ? rowToProduct(data) : null;
 }
 
-export async function createProduct(db, { fields, query }) {
+export async function createProduct(db, { fields, query, sourceRow }) {
   const row = { ...fieldsToColumns(fields), query: query || '', status: 'unverified', last_results: [] };
+  if (sourceRow) row.source_row = sourceRow;
   const { data, error } = await db.from(TABLE).insert(row).select().single();
   if (error) throw wrap(error);
   return rowToProduct(data);
 }
 
-// Bulk insert (used by CSV import) — a single round trip.
+// Bulk insert (used by CSV import). Chunked so large files don't blow past
+// request/statement limits.
 export async function createProducts(db, items) {
   if (!items.length) return [];
-  const rows = items.map(({ fields, query }) => ({
-    ...fieldsToColumns(fields),
-    query: query || '',
-    status: 'unverified',
-    last_results: [],
-  }));
-  const { data, error } = await db.from(TABLE).insert(rows).select();
-  if (error) throw wrap(error);
-  return (data || []).map(rowToProduct);
+  const CHUNK = 500;
+  const created = [];
+  for (let i = 0; i < items.length; i += CHUNK) {
+    const rows = items.slice(i, i + CHUNK).map(({ fields, query, sourceRow }) => {
+      const row = { ...fieldsToColumns(fields), query: query || '', status: 'unverified', last_results: [] };
+      if (sourceRow) row.source_row = sourceRow;
+      return row;
+    });
+    const { data, error } = await db.from(TABLE).insert(rows).select();
+    if (error) throw wrap(error);
+    created.push(...(data || []).map(rowToProduct));
+  }
+  return created;
 }
 
 export async function updateProduct(db, id, patch) {

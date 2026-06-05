@@ -11,18 +11,18 @@ export default async function handler(req, res) {
     }
     if (req.method === 'POST') {
       const body = readBody(req);
-      // Bulk import: { items: [{ fields }, ...] }
+      // Bulk import: { items: [{ fields, source_row }, ...] }
       if (Array.isArray(body.items)) {
         const items = body.items
-          .map((it) => cleanFields(it.fields || it))
-          .filter((f) => Object.values(f).some(Boolean))
-          .map((fields) => ({ fields, query: buildQuery(fields) }));
+          .map((it) => ({ fields: cleanFields(it.fields || it), sourceRow: it.source_row || null }))
+          .filter((x) => Object.values(x.fields).some(Boolean) || (x.sourceRow && Object.values(x.sourceRow).some(Boolean)))
+          .map((x) => ({ fields: x.fields, query: buildQuery(x.fields), sourceRow: x.sourceRow }));
         const products = await createProducts(db, items);
         return res.status(201).json({ products });
       }
       // Single create
       const fields = cleanFields(body.fields);
-      const product = await createProduct(db, { fields, query: buildQuery(fields) });
+      const product = await createProduct(db, { fields, query: buildQuery(fields), sourceRow: body.source_row || null });
       return res.status(201).json({ product });
     }
     return res.status(405).json({ error: 'Method not allowed' });
