@@ -15,7 +15,7 @@ export default async function handler(req, res) {
       if (Array.isArray(body.items)) {
         const items = body.items
           .map((it) => ({ fields: cleanFields(it.fields || it), sourceRow: it.source_row || null }))
-          .filter((x) => Object.values(x.fields).some(Boolean) || (x.sourceRow && Object.values(x.sourceRow).some(Boolean)))
+          .filter((x) => Object.values(x.fields).some(Boolean) || (Array.isArray(x.sourceRow) && x.sourceRow.some((pair) => pair && pair[1])))
           .map((x) => ({ fields: x.fields, query: buildQuery(x.fields), sourceRow: x.sourceRow }));
         const products = await createProducts(db, items);
         return res.status(201).json({ products });

@@ -692,15 +692,15 @@ function csvToItems(text) {
   if (!mapped.some(Boolean)) return { items: [], error: 'No recognized columns — include at least Title or GTIN.' };
   const items = rows.slice(1).map((r) => {
     const fields = {};
-    const sourceRow = {};
+    const sourceRow = []; // ordered [key, value] pairs (jsonb preserves array order)
     origHeader.forEach((h, i) => {
       const v = r[i] != null ? String(r[i]).trim() : '';
-      if (h) sourceRow[h] = v;
+      if (h) sourceRow.push([h, v]);
       const key = mapped[i];
       if (key && v) fields[key] = v;
     });
     return { fields, sourceRow };
-  }).filter((it) => Object.values(it.fields).some(Boolean) || Object.values(it.sourceRow).some(Boolean));
+  }).filter((it) => Object.values(it.fields).some(Boolean) || it.sourceRow.some(([, v]) => v));
   return { items, mapped: mapped.filter(Boolean), columns: origHeader.filter(Boolean) };
 }
 
@@ -742,11 +742,16 @@ function csvCell(v) {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
+// sourceRow is an ordered array of [key, value] pairs (older rows may be objects).
+function srcKeys(sr) { return Array.isArray(sr) ? sr.map(([k]) => k) : Object.keys(sr || {}); }
+function srcMap(sr) { return Array.isArray(sr) ? Object.fromEntries(sr) : (sr || {}); }
+
 // The verified identifier written into the "Store ID" column. Prefers the
 // marketplace id when the row's Store is Amazon/Walmart, otherwise the chosen
 // Google listing's catalog/product id.
 function deriveStoreId(p) {
-  const store = String((p.sourceRow && (p.sourceRow.Store ?? p.sourceRow.store)) || '').toLowerCase();
+  const m = srcMap(p.sourceRow);
+  const store = String(m.Store ?? m.store ?? '').toLowerCase();
   if (store.includes('amazon') && p.amazon?.id_value) return p.amazon.id_value;
   if (store.includes('walmart') && p.walmart?.id_value) return p.walmart.id_value;
   if (p.match) return p.match.catalog_id || p.match.listing_product_id || p.match.product_id || '';
@@ -764,10 +769,10 @@ function downloadCSV(text, name) {
 function exportCSV() {
   if (!state.products.length) { toast('No products to export.', 'bad'); return; }
   // Reproduce the imported columns exactly when available, filling Store ID.
-  const withSrc = state.products.filter((p) => p.sourceRow && Object.keys(p.sourceRow).length);
+  const withSrc = state.products.filter((p) => srcKeys(p.sourceRow).length);
   let columns = [];
   if (withSrc.length) {
-    for (const p of withSrc) for (const k of Object.keys(p.sourceRow)) if (!columns.includes(k)) columns.push(k);
+    for (const p of withSrc) for (const k of srcKeys(p.sourceRow)) if (!columns.includes(k)) columns.push(k);
   } else {
     columns = ['ID', 'GTIN', 'Title', 'Store', 'Store ID'];
   }
@@ -776,7 +781,7 @@ function exportCSV() {
 
   const lines = [columns.map(csvCell).join(',')];
   for (const p of state.products) {
-    const src = p.sourceRow || {};
+    const src = srcMap(p.sourceRow);
     const row = columns.map((c) => {
       if (c === storeIdKey) return deriveStoreId(p) || src[c] || '';
       if (c in src) return src[c];
@@ -848,11 +853,10 @@ async function renderReviewCurrent() {
     .filter((f) => product.fields[f.key])
     .map((f) => el('div', {}, el('span', { className: 'muted' }, `${f.label}: `), product.fields[f.key]));
   // Show the original imported row values (e.g. ID, Store) when present.
-  const srcSummary = product.sourceRow
-    ? Object.entries(product.sourceRow)
-        .filter(([k, v]) => v && !/^title$|^gtin$|store id/i.test(k))
-        .map(([k, v]) => el('div', {}, el('span', { className: 'muted' }, `${k}: `), v))
-    : [];
+  const srcPairs = Array.isArray(product.sourceRow) ? product.sourceRow : Object.entries(product.sourceRow || {});
+  const srcSummary = srcPairs
+    .filter(([k, v]) => v && !/^title$|^gtin$|store id/i.test(k))
+    .map(([k, v]) => el('div', {}, el('span', { className: 'muted' }, `${k}: `), v));
   const storeId = deriveStoreId(product);
   $('#reviewMeta').innerHTML = '';
   $('#reviewMeta').append(
