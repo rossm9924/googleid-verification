@@ -238,6 +238,7 @@ textarea { resize: vertical; }
 .mp-toggles .inline { color: var(--text); }
 .mp-section { margin-top: 14px; }
 .mp-h { font-size: 13px; margin: 0 0 8px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.verified-panel { border-color: #cfe4dd; background: #fbfdfc; }
 .captured-ids { display: flex; flex-direction: column; gap: 6px; margin-bottom: 6px; }
 .captured-id {
   display: flex; align-items: center; gap: 10px;

@@ -437,24 +437,41 @@ function enabledMarketplaces() {
   return list;
 }
 
-function renderCapturedIds(product) {
-  const box = $('#capturedIds');
+// A single captured-id row (label, value, copy, optional link + remove).
+function capturedRow(label, value, { link, onRemove } = {}) {
+  const copyBtn = el('button', { className: 'copy-btn', type: 'button' }, 'copy');
+  copyBtn.addEventListener('click', () => copyText(String(value), copyBtn));
+  const row = el('div', { className: 'captured-id' },
+    el('span', { className: 'ci-label' }, label),
+    el('span', { className: 'ci-val' }, String(value)), copyBtn);
+  if (link) row.append(el('a', { href: link, target: '_blank', rel: 'noopener' }, 'view ↗'));
+  if (onRemove) {
+    const rm = el('button', { className: 'copy-btn', type: 'button' }, 'remove');
+    rm.addEventListener('click', onRemove);
+    row.append(rm);
+  }
+  return row;
+}
+
+// Prominent summary of everything verified for the current product, shown at
+// the top of the editor. Fills in as matches/marketplace IDs are confirmed.
+function renderVerifiedIds(product) {
+  const box = $('#verifiedIds');
   box.innerHTML = '';
   const rows = [];
-  for (const engine of ['amazon', 'walmart']) {
-    const m = product?.[engine];
-    if (!m?.id_value) continue;
-    const copyBtn = el('button', { className: 'copy-btn', type: 'button' }, 'copy');
-    copyBtn.addEventListener('click', () => copyText(String(m.id_value), copyBtn));
-    const remove = el('button', { className: 'copy-btn', type: 'button' }, 'remove');
-    remove.addEventListener('click', () => useMarketplace(engine, null));
-    const row = el('div', { className: 'captured-id' },
-      el('span', { className: 'ci-label' }, m.id_label || engine),
-      el('span', { className: 'ci-val' }, m.id_value), copyBtn, remove);
-    if (m.link) row.append(el('a', { href: m.link, target: '_blank', rel: 'noopener' }, 'view ↗'));
-    rows.push(row);
+  const storeId = deriveStoreId(product || {});
+  if (storeId) rows.push(capturedRow('Store ID', storeId));
+  const m = product?.match;
+  const googleId = m && (m.catalog_id || m.listing_product_id || m.product_id);
+  if (googleId) rows.push(capturedRow('Google catalog ID', googleId, { link: m.product_link }));
+  if (product?.amazon?.id_value) {
+    rows.push(capturedRow('Amazon ASIN', product.amazon.id_value, { link: product.amazon.link, onRemove: () => useMarketplace('amazon', null) }));
+  }
+  if (product?.walmart?.id_value) {
+    rows.push(capturedRow('Walmart item ID', product.walmart.id_value, { link: product.walmart.link, onRemove: () => useMarketplace('walmart', null) }));
   }
   rows.forEach((r) => box.append(r));
+  $('#verifiedPanel').classList.toggle('hidden', rows.length === 0);
 }
 
 function marketplaceCard(r, { selectedId, onUse }) {
@@ -517,25 +534,24 @@ async function useMarketplace(engine, result) {
     const { product: updated } = await api(`/api/products/${product.id}`, { method: 'PATCH', body: { [engine]: payload } });
     state.current = { ...updated, lastResults: state.results.length ? state.results : updated.lastResults };
     upsertLocalProduct(updated);
-    renderCapturedIds(state.current);
+    renderVerifiedIds(state.current);
     renderMarketplaceSection(engine);
     toast(result ? `${result.id_label} saved ✓` : `${engine} ID cleared`, result ? 'ok' : '');
   } catch (e) { toast(e.message, 'bad'); }
 }
 
 function updateMarketplaceVisibility(product) {
-  const hasCaptured = product?.amazon?.id_value || product?.walmart?.id_value;
-  const show = state.amazonOn || state.walmartOn || hasCaptured;
+  const show = state.amazonOn || state.walmartOn;
   $('#marketplacePanel').classList.toggle('hidden', !show);
   $('#amazonSection').classList.add('hidden');
   $('#walmartSection').classList.add('hidden');
   $('#amazonResults').innerHTML = '';
   $('#walmartResults').innerHTML = '';
   state.marketplaceResults = { amazon: [], walmart: [] };
-  $('#marketplaceStatus').textContent = enabledMarketplaces().length
+  $('#marketplaceStatus').textContent = show
     ? `Run a search to fetch ${enabledMarketplaces().join(' & ')} results.`
-    : 'Enable Amazon/Walmart above to look up IDs.';
-  renderCapturedIds(product || {});
+    : '';
+  renderVerifiedIds(product);
 }
 
 /* ---------- Match recording (shared) ---------- */

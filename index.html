@@ -38,6 +38,12 @@
       </aside>
 
       <section class="content">
+        <!-- Verified IDs summary (fills in as matches are confirmed) -->
+        <div id="verifiedPanel" class="panel verified-panel hidden">
+          <div class="panel__head"><h2>✓ Verified IDs</h2></div>
+          <div id="verifiedIds" class="captured-ids"></div>
+        </div>
+
         <div class="panel">
           <div class="panel__head">
             <h2 id="formTitle">Add Product</h2>
@@ -112,7 +118,6 @@
             <h2>Marketplace IDs</h2>
             <span id="marketplaceStatus" class="muted"></span>
           </div>
-          <div id="capturedIds" class="captured-ids"></div>
           <div id="amazonSection" class="mp-section hidden">
             <h3 class="mp-h">Amazon — ASINs</h3>
             <div id="amazonResults" class="results-grid"></div>
