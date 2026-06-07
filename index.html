@@ -164,12 +164,15 @@
           <button id="reviewNext" class="btn btn--sm" type="button">Next ▶</button>
         </div>
         <div class="review__right-controls">
+          <label class="inline"><input type="checkbox" id="reviewAmazonToggle" /> Amazon</label>
+          <label class="inline"><input type="checkbox" id="reviewWalmartToggle" /> Walmart</label>
           <label class="inline"><input type="checkbox" id="reviewUnverifiedOnly" /> Unverified only</label>
           <button id="reviewDone" class="btn btn--primary" type="button">✓ Done &amp; export</button>
         </div>
       </div>
       <div class="review__body">
         <div class="review__left">
+          <div id="reviewVerified" class="captured-ids"></div>
           <div id="reviewMeta" class="review__meta"></div>
           <div id="reviewReference" class="review__reference"></div>
           <div class="review__decision">
@@ -180,6 +183,14 @@
         <div class="review__right">
           <div id="reviewResultsStatus" class="results-status muted"></div>
           <div id="reviewResults" class="results-grid"></div>
+          <div id="reviewMpAmazon" class="mp-section hidden">
+            <h3 class="mp-h">Amazon — ASINs</h3>
+            <div id="reviewAmazonResults" class="results-grid"></div>
+          </div>
+          <div id="reviewMpWalmart" class="mp-section hidden">
+            <h3 class="mp-h">Walmart — item IDs</h3>
+            <div id="reviewWalmartResults" class="results-grid"></div>
+          </div>
         </div>
       </div>
     </div>

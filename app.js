@@ -12,7 +12,7 @@ const state = {
   current: null, // currently loaded product record, or null for a new/unsaved one
   results: [], // results from the most recent search
   marketplaceResults: { amazon: [], walmart: [] },
-  review: { active: false, ids: [], index: 0, unverifiedOnly: false },
+  review: { active: false, ids: [], index: 0, unverifiedOnly: false, mp: { amazon: [], walmart: [] } },
 };
 
 // Reference (barcode) lookups cached by GTIN for the session.
@@ -453,10 +453,9 @@ function capturedRow(label, value, { link, onRemove } = {}) {
   return row;
 }
 
-// Prominent summary of everything verified for the current product, shown at
-// the top of the editor. Fills in as matches/marketplace IDs are confirmed.
-function renderVerifiedIds(product) {
-  const box = $('#verifiedIds');
+// Render the verified-ID rows for a product into any container. Returns the
+// number of rows. `onRemove(engine)` is wired on marketplace rows when provided.
+function renderVerifiedInto(box, product, onRemove) {
   box.innerHTML = '';
   const rows = [];
   const storeId = deriveStoreId(product || {});
@@ -465,13 +464,28 @@ function renderVerifiedIds(product) {
   const googleId = m && (m.catalog_id || m.listing_product_id || m.product_id);
   if (googleId) rows.push(capturedRow('Google catalog ID', googleId, { link: m.product_link }));
   if (product?.amazon?.id_value) {
-    rows.push(capturedRow('Amazon ASIN', product.amazon.id_value, { link: product.amazon.link, onRemove: () => useMarketplace('amazon', null) }));
+    rows.push(capturedRow('Amazon ASIN', product.amazon.id_value, { link: product.amazon.link, onRemove: onRemove ? () => onRemove('amazon') : undefined }));
   }
   if (product?.walmart?.id_value) {
-    rows.push(capturedRow('Walmart item ID', product.walmart.id_value, { link: product.walmart.link, onRemove: () => useMarketplace('walmart', null) }));
+    rows.push(capturedRow('Walmart item ID', product.walmart.id_value, { link: product.walmart.link, onRemove: onRemove ? () => onRemove('walmart') : undefined }));
   }
   rows.forEach((r) => box.append(r));
-  $('#verifiedPanel').classList.toggle('hidden', rows.length === 0);
+  return rows.length;
+}
+
+// Top-of-editor verified summary; fills in as matches/marketplace IDs confirm.
+function renderVerifiedIds(product) {
+  const n = renderVerifiedInto($('#verifiedIds'), product, (engine) => useMarketplace(engine, null));
+  $('#verifiedPanel').classList.toggle('hidden', n === 0);
+}
+
+const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
+// Normalize a marketplace result into the payload we persist on a product.
+function mpPayload(result) {
+  return result
+    ? { id_label: result.id_label, id_value: result.id_value, secondary_id: result.secondary_id, title: result.title, link: result.link, price: result.price, thumbnail: result.thumbnail }
+    : null;
 }
 
 function marketplaceCard(r, { selectedId, onUse }) {
@@ -504,7 +518,7 @@ function renderMarketplaceSection(engine) {
   results.forEach((r) => grid.append(marketplaceCard(r, { selectedId, onUse: (res) => useMarketplace(engine, res) })));
 }
 
-async function searchMarketplaces(query) {
+async function searchMarketplaces(query, gtin) {
   const engines = enabledMarketplaces();
   if (!engines.length || !query) return;
   $('#marketplacePanel').classList.remove('hidden');
@@ -514,7 +528,7 @@ async function searchMarketplaces(query) {
     grid.innerHTML = '';
     grid.append(el('div', { className: 'muted' }, `Searching ${engine}…`));
     try {
-      const data = await api('/api/marketplace', { method: 'POST', body: { engine, query } });
+      const data = await api('/api/marketplace', { method: 'POST', body: { engine, query, gtin } });
       state.marketplaceResults[engine] = data.results;
       renderMarketplaceSection(engine);
     } catch (e) {
@@ -527,11 +541,7 @@ async function searchMarketplaces(query) {
 async function useMarketplace(engine, result) {
   try {
     const product = await ensureSaved();
-    const payload = result ? {
-      id_label: result.id_label, id_value: result.id_value, secondary_id: result.secondary_id,
-      title: result.title, link: result.link, price: result.price, thumbnail: result.thumbnail,
-    } : null;
-    const { product: updated } = await api(`/api/products/${product.id}`, { method: 'PATCH', body: { [engine]: payload } });
+    const { product: updated } = await api(`/api/products/${product.id}`, { method: 'PATCH', body: { [engine]: mpPayload(result) } });
     state.current = { ...updated, lastResults: state.results.length ? state.results : updated.lastResults };
     upsertLocalProduct(updated);
     renderVerifiedIds(state.current);
@@ -582,7 +592,7 @@ async function doSearch() {
       state.current = product; upsertLocalProduct(product);
     }
     if (currentGtin()) renderReferenceInto($('#referenceBody'), currentGtin());
-    if (enabledMarketplaces().length) searchMarketplaces(query);
+    if (enabledMarketplaces().length) searchMarketplaces(query, currentGtin());
     toast(`Found ${data.results.length} listing(s).`, 'ok');
   } catch (e) {
     $('#resultsStatus').textContent = e.message;
@@ -873,14 +883,14 @@ async function renderReviewCurrent() {
   const srcSummary = srcPairs
     .filter(([k, v]) => v && !/^title$|^gtin$|store id/i.test(k))
     .map(([k, v]) => el('div', {}, el('span', { className: 'muted' }, `${k}: `), v));
-  const storeId = deriveStoreId(product);
+  // Verified IDs at the very top of the review panel.
+  renderVerifiedInto($('#reviewVerified'), product, (engine) => reviewUseMarketplace(id, engine, null));
   $('#reviewMeta').innerHTML = '';
   $('#reviewMeta').append(
     el('div', { className: 'r-title', style: 'font-weight:600' }, product.fields.title || '(untitled product)'),
     ...fieldsSummary,
     ...srcSummary,
-    el('div', { className: 'r-query' }, product.query || ''),
-    storeId ? el('div', { className: 'r-storeid' }, el('span', { className: 'muted' }, 'Store ID: '), storeId) : '');
+    el('div', { className: 'r-query' }, product.query || ''));
 
   // Status badge
   const sb = $('#reviewStatus');
@@ -910,6 +920,43 @@ async function renderReviewCurrent() {
   } else {
     grid.innerHTML = ''; statusEl.textContent = 'This product has no query (no fields filled).'; statusEl.classList.remove('hidden');
   }
+
+  // Marketplace (Amazon / Walmart) lookups in review, when toggled on.
+  state.review.mp = { amazon: [], walmart: [] };
+  for (const engine of ['amazon', 'walmart']) $(`#reviewMp${cap(engine)}`).classList.add('hidden');
+  for (const engine of enabledMarketplaces()) {
+    const section = $(`#reviewMp${cap(engine)}`);
+    const mgrid = $(`#review${cap(engine)}Results`);
+    section.classList.remove('hidden');
+    mgrid.innerHTML = '';
+    mgrid.append(el('div', { className: 'muted' }, `Searching ${engine}…`));
+    api('/api/marketplace', { method: 'POST', body: { engine, query: product.query, gtin: product.fields.gtin } })
+      .then((data) => {
+        if (reviewList()[state.review.index] !== id) return; // moved on
+        state.review.mp[engine] = data.results;
+        renderReviewMpSection(engine, product);
+      })
+      .catch((e) => { mgrid.innerHTML = ''; mgrid.append(el('div', { className: 'muted' }, `${engine} failed: ${e.message}`)); });
+  }
+}
+
+function renderReviewMpSection(engine, product) {
+  const grid = $(`#review${cap(engine)}Results`);
+  const results = state.review.mp[engine] || [];
+  grid.innerHTML = '';
+  if (!results.length) { grid.append(el('div', { className: 'muted' }, `No ${engine} results.`)); return; }
+  const selectedId = product[engine]?.id_value;
+  results.forEach((r) => grid.append(marketplaceCard(r, { selectedId, onUse: (res) => reviewUseMarketplace(product.id, engine, res) })));
+}
+
+async function reviewUseMarketplace(productId, engine, result) {
+  try {
+    const { product } = await api(`/api/products/${productId}`, { method: 'PATCH', body: { [engine]: mpPayload(result) } });
+    upsertLocalProduct(product);
+    renderVerifiedInto($('#reviewVerified'), product, (e) => reviewUseMarketplace(productId, e, null));
+    renderReviewMpSection(engine, product);
+    toast(result ? `${result.id_label} saved ✓` : `${engine} ID cleared`, result ? 'ok' : '');
+  } catch (e) { toast(e.message, 'bad'); }
 }
 
 async function reviewSelectMatch(productId, result) {
@@ -1003,20 +1050,30 @@ async function init() {
   $('#pasteMode').textContent = state.aiParseConfigured ? '(AI on)' : '(rules-based)';
 
   // Marketplace toggles (Amazon / Walmart)
-  const amzToggle = $('#amazonToggle');
-  const wmtToggle = $('#walmartToggle');
-  amzToggle.checked = state.amazonOn;
-  wmtToggle.checked = state.walmartOn;
-  if (!state.marketplaceConfigured) { amzToggle.disabled = true; wmtToggle.disabled = true; }
-  const onToggle = (engine, checkbox) => {
-    state[`${engine}On`] = checkbox.checked;
-    localStorage.setItem(`${engine}On`, checkbox.checked ? '1' : '0');
-    updateMarketplaceVisibility(state.current);
-    const query = $('#queryInput').value.trim();
-    if (checkbox.checked && query) searchMarketplaces(query);
+  // Amazon/Walmart toggles exist in both the editor and the review bar; keep them in sync.
+  const setMarketplaceToggle = (engine, on) => {
+    state[`${engine}On`] = on;
+    localStorage.setItem(`${engine}On`, on ? '1' : '0');
+    [`#${engine}Toggle`, `#review${cap(engine)}Toggle`].forEach((sel) => { const c = $(sel); if (c) c.checked = on; });
   };
-  amzToggle.addEventListener('change', () => onToggle('amazon', amzToggle));
-  wmtToggle.addEventListener('change', () => onToggle('walmart', wmtToggle));
+  for (const engine of ['amazon', 'walmart']) {
+    [`#${engine}Toggle`, `#review${cap(engine)}Toggle`].forEach((sel) => {
+      const c = $(sel);
+      if (!c) return;
+      c.checked = state[`${engine}On`];
+      if (!state.marketplaceConfigured) c.disabled = true;
+    });
+    $(`#${engine}Toggle`).addEventListener('change', (e) => {
+      setMarketplaceToggle(engine, e.target.checked);
+      updateMarketplaceVisibility(state.current);
+      const query = $('#queryInput').value.trim();
+      if (e.target.checked && query) searchMarketplaces(query, currentGtin());
+    });
+    $(`#review${cap(engine)}Toggle`).addEventListener('change', (e) => {
+      setMarketplaceToggle(engine, e.target.checked);
+      if (state.review.active) renderReviewCurrent();
+    });
+  }
 
   // Bulk
   $('#bulkImportBtn').addEventListener('click', openBulk);

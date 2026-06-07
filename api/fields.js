@@ -7,6 +7,7 @@ export default function handler(req, res) {
     serpapiConfigured: Boolean(process.env.SERPAPI_KEY),
     barcodeConfigured: Boolean(process.env.BARCODELOOKUP_KEY),
     marketplaceConfigured: Boolean(process.env.SERPAPI_KEY),
+    synccentricConfigured: Boolean(process.env.SYNCCENTRIC_API_KEY),
     storageConfigured: storageConfigured(),
     aiParseConfigured: Boolean(process.env.ANTHROPIC_API_KEY),
   });
