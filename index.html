@@ -67,8 +67,7 @@
             <label for="queryInput">Search query <span class="muted">(non-empty fields joined by commas — editable)</span></label>
             <textarea id="queryInput" rows="2" placeholder="Fill in fields above to build a query…"></textarea>
             <div class="query-controls">
-              <label class="inline">Country <input id="glInput" type="text" maxlength="2" value="us" /></label>
-              <label class="inline">Lang <input id="hlInput" type="text" maxlength="2" value="en" /></label>
+              <label class="inline">Search location <select id="locationSelect" class="loc-select"></select></label>
             </div>
           </div>
           <div class="actions">
@@ -164,6 +163,7 @@
           <button id="reviewNext" class="btn btn--sm" type="button">Next ▶</button>
         </div>
         <div class="review__right-controls">
+          <label class="inline">Location <select id="reviewLocationSelect" class="loc-select"></select></label>
           <label class="inline"><input type="checkbox" id="reviewAmazonToggle" /> Amazon</label>
           <label class="inline"><input type="checkbox" id="reviewWalmartToggle" /> Walmart</label>
           <label class="inline"><input type="checkbox" id="reviewUnverifiedOnly" /> Unverified only</label>

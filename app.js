@@ -8,6 +8,7 @@ const state = {
   aiParseConfigured: false,
   amazonOn: localStorage.getItem('amazonOn') === '1',
   walmartOn: localStorage.getItem('walmartOn') === '1',
+  countryGl: localStorage.getItem('countryGl') || 'us',
   products: [],
   current: null, // currently loaded product record, or null for a new/unsaved one
   results: [], // results from the most recent search
@@ -69,6 +70,70 @@ async function copyText(text, btn) {
     btn.classList.add('copied');
     setTimeout(() => { btn.textContent = old; btn.classList.remove('copied'); }, 1100);
   }
+}
+
+/* ---------- Search location (country) ---------- */
+// name = SerpApi `location` value; gl/hl = Google country/language; amazon_domain
+// + locale drive Amazon (SerpApi / SyncCentric). Omitted Amazon fields fall back
+// to amazon.com / US on the server.
+const COUNTRIES = [
+  { name: 'United States', gl: 'us', hl: 'en', amazon_domain: 'amazon.com', locale: 'US' },
+  { name: 'United Kingdom', gl: 'uk', hl: 'en', amazon_domain: 'amazon.co.uk', locale: 'GB' },
+  { name: 'Canada', gl: 'ca', hl: 'en', amazon_domain: 'amazon.ca', locale: 'CA' },
+  { name: 'Australia', gl: 'au', hl: 'en', amazon_domain: 'amazon.com.au', locale: 'AU' },
+  { name: 'Germany', gl: 'de', hl: 'de', amazon_domain: 'amazon.de', locale: 'DE' },
+  { name: 'France', gl: 'fr', hl: 'fr', amazon_domain: 'amazon.fr', locale: 'FR' },
+  { name: 'Italy', gl: 'it', hl: 'it', amazon_domain: 'amazon.it', locale: 'IT' },
+  { name: 'Spain', gl: 'es', hl: 'es', amazon_domain: 'amazon.es', locale: 'ES' },
+  { name: 'Netherlands', gl: 'nl', hl: 'nl', amazon_domain: 'amazon.nl', locale: 'NL' },
+  { name: 'Mexico', gl: 'mx', hl: 'es', amazon_domain: 'amazon.com.mx', locale: 'MX' },
+  { name: 'Brazil', gl: 'br', hl: 'pt', amazon_domain: 'amazon.com.br', locale: 'BR' },
+  { name: 'India', gl: 'in', hl: 'en', amazon_domain: 'amazon.in', locale: 'IN' },
+  { name: 'Japan', gl: 'jp', hl: 'ja', amazon_domain: 'amazon.co.jp', locale: 'JP' },
+  { name: 'Sweden', gl: 'se', hl: 'sv', amazon_domain: 'amazon.se', locale: 'SE' },
+  { name: 'Poland', gl: 'pl', hl: 'pl', amazon_domain: 'amazon.pl', locale: 'PL' },
+  { name: 'Turkey', gl: 'tr', hl: 'tr', amazon_domain: 'amazon.com.tr', locale: 'TR' },
+  { name: 'United Arab Emirates', gl: 'ae', hl: 'en', amazon_domain: 'amazon.ae', locale: 'AE' },
+  { name: 'Saudi Arabia', gl: 'sa', hl: 'en', amazon_domain: 'amazon.sa', locale: 'SA' },
+  { name: 'Singapore', gl: 'sg', hl: 'en', amazon_domain: 'amazon.sg', locale: 'SG' },
+  { name: 'Ireland', gl: 'ie', hl: 'en' },
+  { name: 'New Zealand', gl: 'nz', hl: 'en' },
+  { name: 'South Africa', gl: 'za', hl: 'en' },
+  { name: 'Switzerland', gl: 'ch', hl: 'de' },
+  { name: 'Austria', gl: 'at', hl: 'de' },
+  { name: 'Belgium', gl: 'be', hl: 'nl' },
+  { name: 'Norway', gl: 'no', hl: 'no' },
+  { name: 'Denmark', gl: 'dk', hl: 'da' },
+  { name: 'Finland', gl: 'fi', hl: 'fi' },
+  { name: 'Portugal', gl: 'pt', hl: 'pt' },
+  { name: 'Greece', gl: 'gr', hl: 'el' },
+  { name: 'Hong Kong', gl: 'hk', hl: 'en' },
+  { name: 'South Korea', gl: 'kr', hl: 'ko' },
+  { name: 'Argentina', gl: 'ar', hl: 'es' },
+  { name: 'Chile', gl: 'cl', hl: 'es' },
+  { name: 'Colombia', gl: 'co', hl: 'es' },
+];
+
+function currentCountry() {
+  return COUNTRIES.find((c) => c.gl === state.countryGl) || COUNTRIES[0];
+}
+function searchLocale() {
+  const c = currentCountry();
+  return { location: c.name, gl: c.gl, hl: c.hl, amazon_domain: c.amazon_domain || 'amazon.com', locale: c.locale || 'US' };
+}
+function populateCountrySelect(sel) {
+  if (!sel) return;
+  sel.innerHTML = '';
+  COUNTRIES.forEach((c) => {
+    const o = el('option', { value: c.gl }, c.name);
+    if (c.gl === state.countryGl) o.selected = true;
+    sel.append(o);
+  });
+}
+function setCountry(gl) {
+  state.countryGl = gl;
+  localStorage.setItem('countryGl', gl);
+  ['#locationSelect', '#reviewLocationSelect'].forEach((s) => { const node = $(s); if (node) node.value = gl; });
 }
 
 /* ---------- Fields ---------- */
@@ -522,13 +587,14 @@ async function searchMarketplaces(query, gtin) {
   const engines = enabledMarketplaces();
   if (!engines.length || !query) return;
   $('#marketplacePanel').classList.remove('hidden');
+  const loc = searchLocale();
   for (const engine of engines) {
     const grid = $(`#${engine}Results`);
     $(`#${engine}Section`).classList.remove('hidden');
     grid.innerHTML = '';
     grid.append(el('div', { className: 'muted' }, `Searching ${engine}…`));
     try {
-      const data = await api('/api/marketplace', { method: 'POST', body: { engine, query, gtin } });
+      const data = await api('/api/marketplace', { method: 'POST', body: { engine, query, gtin, amazon_domain: loc.amazon_domain, locale: loc.locale } });
       state.marketplaceResults[engine] = data.results;
       renderMarketplaceSection(engine);
     } catch (e) {
@@ -580,7 +646,8 @@ async function doSearch() {
   $('#resultsStatus').textContent = 'Searching Google Shopping…';
   $('#resultsStatus').classList.remove('hidden');
   try {
-    const data = await api('/api/search', { method: 'POST', body: { query, gl: $('#glInput').value.trim() || 'us', hl: $('#hlInput').value.trim() || 'en' } });
+    const loc = searchLocale();
+    const data = await api('/api/search', { method: 'POST', body: { query, location: loc.location, gl: loc.gl, hl: loc.hl } });
     state.results = data.results;
     renderResultsInto($('#results'), data.results, {
       matchObj: state.current?.match, onMatch: selectMatch,
@@ -909,7 +976,8 @@ async function renderReviewCurrent() {
   } else if (product.query) {
     grid.innerHTML = ''; statusEl.classList.remove('hidden'); statusEl.textContent = 'Searching Google Shopping…';
     try {
-      const data = await api('/api/search', { method: 'POST', body: { query: product.query } });
+      const sl = searchLocale();
+      const data = await api('/api/search', { method: 'POST', body: { query: product.query, location: sl.location, gl: sl.gl, hl: sl.hl } });
       const { product: up } = await api(`/api/products/${id}`, { method: 'PATCH', body: { lastResults: data.results } });
       upsertLocalProduct(up);
       // Only render if still on this product
@@ -930,7 +998,8 @@ async function renderReviewCurrent() {
     section.classList.remove('hidden');
     mgrid.innerHTML = '';
     mgrid.append(el('div', { className: 'muted' }, `Searching ${engine}…`));
-    api('/api/marketplace', { method: 'POST', body: { engine, query: product.query, gtin: product.fields.gtin } })
+    const mloc = searchLocale();
+    api('/api/marketplace', { method: 'POST', body: { engine, query: product.query, gtin: product.fields.gtin, amazon_domain: mloc.amazon_domain, locale: mloc.locale } })
       .then((data) => {
         if (reviewList()[state.review.index] !== id) return; // moved on
         state.review.mp[engine] = data.results;
@@ -1046,6 +1115,15 @@ async function init() {
   $('#clearMatchBtn').addEventListener('click', clearMatch);
   $('#lookupBarcodeBtn').addEventListener('click', lookupBarcodeManual);
   $('#productSearch').addEventListener('input', renderProductList);
+
+  // Search location (country) — dropdowns in the editor and review bar, kept in sync.
+  populateCountrySelect($('#locationSelect'));
+  populateCountrySelect($('#reviewLocationSelect'));
+  $('#locationSelect').addEventListener('change', (e) => setCountry(e.target.value));
+  $('#reviewLocationSelect').addEventListener('change', (e) => {
+    setCountry(e.target.value);
+    if (state.review.active) renderReviewCurrent();
+  });
   $('#pasteDetectBtn').addEventListener('click', detectPaste);
   $('#pasteMode').textContent = state.aiParseConfigured ? '(AI on)' : '(rules-based)';
 
