@@ -114,26 +114,27 @@ const COUNTRIES = [
   { name: 'Colombia', gl: 'co', hl: 'es' },
 ];
 
-function currentCountry() {
-  return COUNTRIES.find((c) => c.gl === state.countryGl) || COUNTRIES[0];
-}
-function searchLocale() {
-  const c = currentCountry();
+function localeFor(gl) {
+  const c = COUNTRIES.find((x) => x.gl === gl) || COUNTRIES[0];
   return { location: c.name, gl: c.gl, hl: c.hl, amazon_domain: c.amazon_domain || 'amazon.com', locale: c.locale || 'US' };
 }
-function populateCountrySelect(sel) {
+// Editor/global location.
+function searchLocale() { return localeFor(state.countryGl); }
+// Review uses each product's imported country, falling back to the global one.
+function productLocale(product) { return localeFor((product && product.country) || state.countryGl); }
+function populateCountrySelect(sel, gl = state.countryGl) {
   if (!sel) return;
   sel.innerHTML = '';
   COUNTRIES.forEach((c) => {
     const o = el('option', { value: c.gl }, c.name);
-    if (c.gl === state.countryGl) o.selected = true;
+    if (c.gl === gl) o.selected = true;
     sel.append(o);
   });
 }
 function setCountry(gl) {
   state.countryGl = gl;
   localStorage.setItem('countryGl', gl);
-  ['#locationSelect', '#reviewLocationSelect'].forEach((s) => { const node = $(s); if (node) node.value = gl; });
+  const node = $('#locationSelect'); if (node) node.value = gl;
 }
 
 /* ---------- Fields ---------- */
@@ -263,6 +264,7 @@ function newProduct() {
 async function loadProduct(id) {
   try {
     const { product } = await api(`/api/products/${id}`);
+    if (product.country) setCountry(product.country); // reflect its imported search country
     showEditor(product);
     // Auto-fetch the reference image for context (cached per GTIN).
     if (product.fields?.gtin) renderReferenceInto($('#referenceBody'), product.fields.gtin);
@@ -802,6 +804,7 @@ function openBulk() {
   $('#bulkColumns').textContent = state.fields.map((f) => f.label).join(', ');
   $('#bulkText').value = '';
   $('#bulkPreview').textContent = '';
+  populateCountrySelect($('#bulkLocationSelect'), state.countryGl);
   $('#bulkModal').classList.remove('hidden');
 }
 function closeBulk() { $('#bulkModal').classList.add('hidden'); }
@@ -820,7 +823,8 @@ async function runBulk(startReview) {
   if (!items || !items.length) { toast('Nothing to import — check the CSV.', 'bad'); return; }
   try {
     const payload = items.map((it) => ({ fields: it.fields, source_row: it.sourceRow }));
-    const { products } = await api('/api/products', { method: 'POST', body: { items: payload } });
+    const country = ($('#bulkLocationSelect') && $('#bulkLocationSelect').value) || state.countryGl;
+    const { products } = await api('/api/products', { method: 'POST', body: { items: payload, country } });
     products.forEach(upsertLocalProduct);
     renderProductList();
     closeBulk();
@@ -950,6 +954,9 @@ async function renderReviewCurrent() {
   const srcSummary = srcPairs
     .filter(([k, v]) => v && !/^title$|^gtin$|store id/i.test(k))
     .map(([k, v]) => el('div', {}, el('span', { className: 'muted' }, `${k}: `), v));
+  // Reflect this product's search country in the review location dropdown.
+  if ($('#reviewLocationSelect')) $('#reviewLocationSelect').value = product.country || state.countryGl;
+
   // Verified IDs at the very top of the review panel.
   renderVerifiedInto($('#reviewVerified'), product, (engine) => reviewUseMarketplace(id, engine, null));
   $('#reviewMeta').innerHTML = '';
@@ -976,7 +983,7 @@ async function renderReviewCurrent() {
   } else if (product.query) {
     grid.innerHTML = ''; statusEl.classList.remove('hidden'); statusEl.textContent = 'Searching Google Shopping…';
     try {
-      const sl = searchLocale();
+      const sl = productLocale(product);
       const data = await api('/api/search', { method: 'POST', body: { query: product.query, location: sl.location, gl: sl.gl, hl: sl.hl } });
       const { product: up } = await api(`/api/products/${id}`, { method: 'PATCH', body: { lastResults: data.results } });
       upsertLocalProduct(up);
@@ -998,7 +1005,7 @@ async function renderReviewCurrent() {
     section.classList.remove('hidden');
     mgrid.innerHTML = '';
     mgrid.append(el('div', { className: 'muted' }, `Searching ${engine}…`));
-    const mloc = searchLocale();
+    const mloc = productLocale(product);
     api('/api/marketplace', { method: 'POST', body: { engine, query: product.query, gtin: product.fields.gtin, amazon_domain: mloc.amazon_domain, locale: mloc.locale } })
       .then((data) => {
         if (reviewList()[state.review.index] !== id) return; // moved on
@@ -1120,9 +1127,16 @@ async function init() {
   populateCountrySelect($('#locationSelect'));
   populateCountrySelect($('#reviewLocationSelect'));
   $('#locationSelect').addEventListener('change', (e) => setCountry(e.target.value));
-  $('#reviewLocationSelect').addEventListener('change', (e) => {
-    setCountry(e.target.value);
-    if (state.review.active) renderReviewCurrent();
+  // In review, the location dropdown overrides the current product's country.
+  $('#reviewLocationSelect').addEventListener('change', async (e) => {
+    const gl = e.target.value;
+    const id = reviewList()[state.review.index];
+    if (!id) { setCountry(gl); return; }
+    try {
+      const { product } = await api(`/api/products/${id}`, { method: 'PATCH', body: { country: gl } });
+      upsertLocalProduct(product);
+      renderReviewCurrent();
+    } catch (err) { toast(err.message, 'bad'); }
   });
   $('#pasteDetectBtn').addEventListener('click', detectPaste);
   $('#pasteMode').textContent = state.aiParseConfigured ? '(AI on)' : '(rules-based)';

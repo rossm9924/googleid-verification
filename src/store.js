@@ -23,6 +23,7 @@ function rowToProduct(row) {
     fields,
     query: row.query || '',
     status: row.status || 'unverified',
+    country: row.country || null,
     match: row.match || null,
     amazon: row.amazon || null,
     walmart: row.walmart || null,
@@ -67,12 +68,18 @@ export async function createProducts(db, items) {
   const CHUNK = 500;
   const created = [];
   for (let i = 0; i < items.length; i += CHUNK) {
-    const rows = items.slice(i, i + CHUNK).map(({ fields, query, sourceRow }) => {
+    const rows = items.slice(i, i + CHUNK).map(({ fields, query, sourceRow, country }) => {
       const row = { ...fieldsToColumns(fields), query: query || '', status: 'unverified', last_results: [] };
       if (sourceRow) row.source_row = sourceRow;
+      if (country) row.country = country;
       return row;
     });
-    const { data, error } = await db.from(TABLE).insert(rows).select();
+    let { data, error } = await db.from(TABLE).insert(rows).select();
+    // Degrade gracefully if the optional `country` column isn't there yet.
+    if (error && /country/i.test(error.message || '')) {
+      const stripped = rows.map(({ country, ...rest }) => rest);
+      ({ data, error } = await db.from(TABLE).insert(stripped).select());
+    }
     if (error) throw wrap(error);
     created.push(...(data || []).map(rowToProduct));
   }
@@ -84,12 +91,17 @@ export async function updateProduct(db, id, patch) {
   if (patch.fields) Object.assign(row, fieldsToColumns(patch.fields));
   if ('query' in patch) row.query = patch.query;
   if ('status' in patch) row.status = patch.status;
+  if ('country' in patch) row.country = patch.country;
   if ('match' in patch) row.match = patch.match;
   if ('amazon' in patch) row.amazon = patch.amazon;
   if ('walmart' in patch) row.walmart = patch.walmart;
   if ('lastResults' in patch) row.last_results = patch.lastResults;
   if ('lastSearchedAt' in patch) row.last_searched_at = patch.lastSearchedAt;
-  const { data, error } = await db.from(TABLE).update(row).eq('id', id).select().maybeSingle();
+  let { data, error } = await db.from(TABLE).update(row).eq('id', id).select().maybeSingle();
+  if (error && 'country' in row && /country/i.test(error.message || '')) {
+    const { country, ...rest } = row;
+    ({ data, error } = await db.from(TABLE).update(rest).eq('id', id).select().maybeSingle());
+  }
   if (error) throw wrap(error);
   return data ? rowToProduct(data) : null;
 }

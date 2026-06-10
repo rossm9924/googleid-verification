@@ -11,12 +11,13 @@ export default async function handler(req, res) {
     }
     if (req.method === 'POST') {
       const body = readBody(req);
-      // Bulk import: { items: [{ fields, source_row }, ...] }
+      // Bulk import: { items: [{ fields, source_row }, ...], country }
       if (Array.isArray(body.items)) {
+        const country = typeof body.country === 'string' && body.country ? body.country : null;
         const items = body.items
           .map((it) => ({ fields: cleanFields(it.fields || it), sourceRow: it.source_row || null }))
           .filter((x) => Object.values(x.fields).some(Boolean) || (Array.isArray(x.sourceRow) && x.sourceRow.some((pair) => pair && pair[1])))
-          .map((x) => ({ fields: x.fields, query: buildQuery(x.fields), sourceRow: x.sourceRow }));
+          .map((x) => ({ fields: x.fields, query: buildQuery(x.fields), sourceRow: x.sourceRow, country }));
         const products = await createProducts(db, items);
         return res.status(201).json({ products });
       }

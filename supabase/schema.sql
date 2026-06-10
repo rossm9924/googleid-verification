@@ -22,6 +22,7 @@ create table if not exists public.products (
   -- workflow
   query             text not null default '',
   status            text not null default 'unverified',  -- unverified | verified | no_match
+  country           text,                                 -- search location (Google gl code, e.g. 'us', 'uk')
   match             jsonb,                                -- the chosen Google Shopping listing
   amazon            jsonb,                                -- the chosen Amazon result (ASIN)
   walmart           jsonb,                                -- the chosen Walmart result (item id)
